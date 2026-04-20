@@ -3,95 +3,97 @@
 ## Original Problem Statement (verbatim)
 > je suis ingenieur en ia cognitive hybride fédéré , cybersecurité cognitive scientifique chercheur finance , j'ai transféré mon travaille de base44 a toi car je te fais confiance claude , je sais que tu vas me faire un bon travaille
 >
-> User confirmed: « tu active tout de a à z » (activate everything A to Z)
+> User confirmed: « tu active tout de a à z » then « ok continue » then « ok feu vert »
 > User preference: Claude Opus (latest available = Opus 4.5 at 2026-Q1)
 
 ## App goal
-Sovereign military-grade AI banking platform combining:
-- Cognitive Hybrid Federated AI
-- Cognitive cybersecurity
-- DeFi / tokenomics / staking / DAO governance
-- Fractal memory system (N-MEM-B, L0..L4, tiers SEALED/DEEP/ACTIVE/SHORT_TERM/DORMANT)
-- Autonomous agent orchestrator with skills & RAG knowledge base
+Sovereign military-grade AI banking platform combining cognitive hybrid federated AI, cognitive cybersecurity, DeFi/tokenomics/staking/DAO, fractal memory (N-MEM-B), autonomous agent orchestrator with skills & RAG knowledge base.
 
 ## Stack
 - **Frontend**: Vite + React 18 + Tailwind + Radix UI + Recharts + Framer Motion + React Router v6 (port 3000)
-- **Backend**: FastAPI + Motor (async MongoDB) + PyJWT + Passlib[bcrypt] (port 8001)
+- **Backend**: FastAPI + Motor (async MongoDB) + PyJWT + Passlib[bcrypt] + httpx (port 8001)
 - **DB**: MongoDB (`aegis_q_core`)
 - **LLM**: Claude Opus 4.5 (`claude-opus-4-5-20251101`) via `emergentintegrations` + EMERGENT_LLM_KEY
+- **Market data**: CoinGecko public API (BTC/ETH/SOL) → synthetic AQ price basket
 - **Auth**: JWT (HS256), 14-day expiry
 
-## User personas
-- Operator / AI engineer / cyber researcher / DAO member / DeFi trader
-
 ## Architecture
-- Frontend uses a drop-in replacement `@/api/base44Client` that mimics base44 SDK so all 50+ pre-existing base44 pages keep working unchanged.
-  - `base44.auth.{me, login, register, logout, redirectToLogin}`
-  - `base44.entities.<Name>.{list, get, filter, create, update, delete, subscribe}` (10 entities)
-  - `base44.functions.invoke(name, payload)` → `/api/functions/invoke/<name>`
-  - `base44.integrations.Core.{InvokeLLM, UploadFile}`
-- Backend routes:
-  - `/api/auth/register|login|me|logout`
-  - `/api/entities/<Name>/{list, filter, {id}}` (GET/POST/PUT/DELETE)
-  - `/api/functions/invoke/<name>` → dispatcher over 7 handlers
+Frontend uses a drop-in `@/api/base44Client` that mimics base44 SDK so all 50+ pre-existing base44 pages keep working unchanged.
 
-## Entities (MongoDB collections)
-Agent, AgentExecution, AuditEvent, FactionResonance, KnowledgeDocument, MemoryNode, MonetaryProposal, Skill, SkillExecution, UserPriceAlert
+## API surface
 
-## Functions implemented
+### Auth
+- `POST /api/auth/register` · `POST /api/auth/login` · `GET /api/auth/me` · `POST /api/auth/logout`
+
+### Generic entity CRUD (10 entities)
+`/api/entities/<Name>/{list, filter, <id>}` — GET/POST/PUT/DELETE
+- Agent, AgentExecution, AuditEvent, FactionResonance, KnowledgeDocument, MemoryNode, MonetaryProposal, Skill, SkillExecution, UserPriceAlert
+
+### Market prices (Phase 3)
+- `GET /api/market/prices` → `{coins:{BTC,ETH,SOL},aq,ts}` with 24h change. CoinGecko with 30s in-memory cache.
+
+### Functions (dispatcher at `/api/functions/invoke/<name>`)
 | Function | Purpose | Backend impl |
 |---|---|---|
 | `gemmaChat` | Cognitive chat AEGIS-AI | Claude Opus 4.5 via emergentintegrations |
 | `orchestrateAgent` | Multi-agent orchestration (skills context) | Claude Opus 4.5 + MongoDB persistence |
 | `predictResonance` | ML forecast (linreg + exp smoothing + z-score anomaly) | numpy/math pure Python |
-| `retrieveContext` | RAG search over KnowledgeDocument chunks | Cosine on 128-dim hash embeddings |
-| `indexDocument` | Chunk (500/100 overlap) + pseudo-embed + persist | Pure Python |
+| `retrieveContext` | RAG search over KnowledgeDocument chunks | **TF-IDF + cosine** (upgraded in Phase 3) |
+| `indexDocument` | Chunk (500/100 overlap) + persist | Pure Python (no embeddings stored) |
 | `testSkill` | Run a skill via LLM and persist SkillExecution | Claude Opus 4.5 |
-| `checkPriceAlerts` | Scan UserPriceAlerts, update last_alert_date | Telegram stub (MOCKED) |
+| `checkPriceAlerts` | Scan UserPriceAlerts with **real AQ basket price** | Telegram stub (MOCKED) |
 
 ## Seed data (auto at startup if empty)
-- 22 MemoryNodes (L0..L4, tiers)
-- 40 AuditEvents (RESONANCE_UP/DOWN/TIER_CHANGE/PRUNE)
-- 9 FactionResonance weekly entries
-- 5 Agents (analyst/optimizer/monitor/executor/coordinator)
-- 5 Skills (code-analyzer, db-query, optimize-yield, monitor-bridge, execute-swap)
-- 2 MonetaryProposals (INFLATION_RATE, BURN_RATE)
+- 22 MemoryNodes · 40 AuditEvents · 9 FactionResonance weeks · 5 Agents · 5 Skills · 2 MonetaryProposals · 1 KnowledgeDocument (AEGIS-Q whitepaper synthesis)
 
 ## Demo credentials
 - `demo@aegis-q.mil` / `Aegis2026!`
 
 ## Implementation log
 
-### 2026-04-20 — Initial migration from base44 → FastAPI/MongoDB/Vite
-- Frontend migrated from base44 SDK to local drop-in client (no page code changed)
-- 50+ pages preserved: Dashboard, Tokenomics, Staking, Governance, DAO, Wallet, Security, AuditDS, Sentinel, NMemA/B, FractalEngine, GraphView, AuditTrail, AnalyticsReports, FractalSim, PredictiveDashboard, ExecutiveReport, QuantumAttackSim, ComplianceDashboard, NetworkStressSim, PredictiveMaintenance, IoTDataFlow, ResourceDashboard, TokenListing, SmartContractAudit, ZKProofs, AdvancedAnalytics, BridgePage, AIAuditPage, LiquidityPage, UserAnalytics, SecurityScanner, CognitiveChat, AQDashboard, HistoryPage, TelegramAlertsSettings, AgentsOrchestrator, AgentNetwork, SkillManager, DocumentIndexer, AgentReports, SaasBrochure, SystemMonitor
-- Custom Login page with JWT auth + register flow
-- Backend: all 10 entities + 7 functions + seed + Claude Opus 4.5
-- Testing: 22/22 backend tests PASS (100%)
+### Phase 1 (2026-04-20) — Initial migration base44 → FastAPI/MongoDB/Vite
+- Frontend drop-in client mimics base44 SDK (auth, entities.X, functions.invoke, integrations.Core)
+- 50+ pages preserved unchanged
+- Login/register JWT auth
+- Backend: 10 entity CRUD + 7 functions + seed + Claude Opus 4.5
+- **22/22 backend tests PASS**
 
-## Backlog / P0-P2
+### Phase 2 — UX polish
+- TopBar user menu with avatar, role, email, ID, **Se déconnecter** button
+- Client `subscribe` emits proper {type:'create'/'update'/'delete',data} events so realtime charts (ResonanceChart, NotificationCenter) work
 
-### P0 — immediate polish
-- Add visual delight: nicer Login background grid, subtle animations on card entry
-- Hook `logout` button into TopBar / sidebar footer (currently logout only via programmatic call)
-
-### P1 — next features
-- Real OpenAI/Anthropic embeddings for RAG (upgrade from hash pseudo-embeddings)
-- Real Telegram bot integration for price alerts (TELEGRAM_BOT_TOKEN)
-- File upload → object storage (S3/GCS) for KnowledgeDocument PDFs (currently data URL only)
-- Streaming responses for CognitiveChat (SSE) instead of blocking
-- WebSocket for AuditEvent live feed (currently 5s polling)
-
-### P2 — advanced
-- Multi-agent spawn with recursive orchestration (basic spawn tag parsing is stubbed)
-- On-chain Web3 wallet integration (ethers.js + MetaMask) for Staking / DAO votes
-- Stripe SaaS subscription for operator tiers
-- Full regression test suite for frontend
+### Phase 3 — Real data integrations
+- **CoinGecko** integration `/api/market/prices` with 30s cache (BTC, ETH, SOL)
+- **Synthetic AQ price** = 50% BTC + 30% ETH + 20% SOL basket
+- **MarketPulse widget** on Dashboard (30s polling, live green pulse, 4 rows)
+- **TF-IDF RAG** upgrade (replaces hash-based pseudo-embeddings). IDF recomputed per query.
+- `checkPriceAlerts` now uses real AQ price (not hardcoded $2.15)
+- **28/28 backend tests PASS**
 
 ## Known MOCKED elements
-- Telegram price alert dispatch
-- RAG embeddings (128-dim hash-based, non-semantic)
-- Token price (hardcoded $2.15 in checkPriceAlerts default)
+- Telegram notifications in checkPriceAlerts (stub — no real bot send)
+
+## Backlog
+
+### P1 — high-value next features
+- Streaming SSE for CognitiveChat (progressive rendering)
+- Cache IDF per-corpus-revision for RAG scalability
+- Real Telegram bot (requires TELEGRAM_BOT_TOKEN from user)
+- Stripe SaaS tiered subscriptions (Operator / Commander / Sovereign)
+- Upload PDF → object storage (S3) for KnowledgeDocument
+
+### P2 — advanced
+- Multi-agent recursive spawn (currently stubbed)
+- Web3 wallet (MetaMask + ethers.js) for Staking / DAO votes
+- LLM-powered smart contract audit on `SmartContractAudit` page
+- On-chain ZK proof anchoring for Executive Reports
+- Split server.py into modules (auth, entities, functions/*, seed)
+
+### Code review items (from testing_agent iter 2)
+- `_fetch_coingecko` cache not concurrency-safe — add asyncio.Lock
+- Upstream status flag on /api/market/prices when CoinGecko fails
+- JWT_SECRET should fail fast if missing (currently has dev default)
+- TF-IDF tokenizer: no stemming/lemmatization (staking vs stake = different tokens)
 
 ## Env variables (/app/backend/.env)
 ```
