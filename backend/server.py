@@ -456,12 +456,30 @@ async def entity_delete(
 # ---------------------------------------------------------------------------
 # LLM helper (Claude Opus 4.5)
 # ---------------------------------------------------------------------------
-async def llm_chat(session_id: str, system_prompt: str, messages: List[Dict[str, str]]) -> str:
-    """Multi-turn chat using Claude Opus 4.5 via emergentintegrations."""
+async def llm_chat(session_id: str, system_prompt: str, messages: List[Dict[str, str]], usecase: str = "cognitive_chat") -> str:
+    """Multi-turn chat. Route via La Ruche first, fallback to Claude Opus 4.5 if all bees fail."""
+    # 1) Try La Ruche (OpenRouter)
+    try:
+        import ruche as _ruche
+        if _ruche.is_ruche_enabled():
+            result = await _ruche.call_usecase(
+                usecase=usecase,
+                messages=messages,
+                system_prompt=system_prompt,
+                max_tokens=1500,
+            )
+            if result.get("content"):
+                logger.info("[Ruche] %s → %s OK", usecase, result.get("bee_used"))
+                return result["content"]
+            logger.warning("[Ruche] %s all bees failed, falling back to Claude Opus", usecase)
+    except Exception as e:
+        logger.warning("[Ruche] module error, falling back to Claude Opus: %s", e)
+
+    # 2) Fallback: Claude Opus 4.5 via emergentintegrations
     if not EMERGENT_LLM_KEY:
         return (
-            "[MODE DÉMO] Clé LLM non configurée. "
-            "Configurez EMERGENT_LLM_KEY dans /app/backend/.env pour activer Claude Opus 4.5."
+            "[MODE DÉMO] Aucun backend IA disponible. Ajoutez des crédits sur OpenRouter "
+            "(https://openrouter.ai/settings/credits) ou configurez EMERGENT_LLM_KEY."
         )
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -472,7 +490,6 @@ async def llm_chat(session_id: str, system_prompt: str, messages: List[Dict[str,
             system_message=system_prompt,
         ).with_model("anthropic", CLAUDE_MODEL)
 
-        # Feed all but the last message to build context, then send last.
         last = messages[-1] if messages else {"role": "user", "content": ""}
         for m in messages[:-1]:
             if m.get("role") == "user":
@@ -480,7 +497,7 @@ async def llm_chat(session_id: str, system_prompt: str, messages: List[Dict[str,
         reply = await chat.send_message(UserMessage(text=last.get("content", "")))
         return reply if isinstance(reply, str) else str(reply)
     except Exception as e:
-        logger.exception("LLM error")
+        logger.exception("Claude Opus fallback failed")
         return f"[Erreur LLM] {type(e).__name__}: {str(e)[:200]}"
 
 
@@ -500,7 +517,7 @@ AEGIS_SYSTEM_PROMPT = (
 async def fn_gemma_chat(body: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
     messages = body.get("messages", [])
     session_id = body.get("session_id", f"chat-{user['id']}")
-    reply = await llm_chat(session_id, AEGIS_SYSTEM_PROMPT, messages)
+    reply = await llm_chat(session_id, AEGIS_SYSTEM_PROMPT, messages, usecase="cognitive_chat")
     return {"content": reply, "reply": reply}
 
 
@@ -1078,6 +1095,54 @@ async def fn_check_price_alerts(body: Dict[str, Any], user: Dict[str, Any]) -> D
 # ---------------------------------------------------------------------------
 # Function dispatcher
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# La Ruche — swarm status monitor
+# ---------------------------------------------------------------------------
+@api.get("/ruche/status")
+async def ruche_status(user: Dict[str, Any] = Depends(get_current_user)):
+    """Probe all 9 bees of La Ruche and return their availability."""
+    import ruche as _ruche
+    if not _ruche.is_ruche_enabled():
+        return {"enabled": False, "bees": [], "message": "OPENROUTER_API_KEY not configured"}
+    bees = await _ruche.swarm_status()
+    # Attach metadata from BEES dict
+    enriched = []
+    for b in bees:
+        meta = _ruche.BEES.get(b.get("role"), {})
+        enriched.append({
+            **b,
+            "label": meta.get("label"),
+            "icon": meta.get("icon"),
+            "model": meta.get("model"),
+            "is_embedding": meta.get("embedding", False),
+        })
+    return {
+        "enabled": True,
+        "bees": enriched,
+        "usecases": _ruche.USECASE_ROUTING,
+        "ts": now_iso(),
+    }
+
+
+@api.post("/ruche/test")
+async def ruche_test_usecase(
+    body: Dict[str, Any],
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Test a specific usecase routing against La Ruche."""
+    import ruche as _ruche
+    usecase = body.get("usecase", "cognitive_chat")
+    query = body.get("query", "Réponds en 1 phrase : qu'est-ce que AEGIS-Q ?")
+    result = await _ruche.call_usecase(
+        usecase=usecase,
+        messages=[{"role": "user", "content": query}],
+        system_prompt="Réponds en français, brièvement.",
+        max_tokens=300,
+    )
+    return result
+
 FUNCTIONS = {
     "gemmaChat": fn_gemma_chat,
     "invokeLLM": fn_invoke_llm,

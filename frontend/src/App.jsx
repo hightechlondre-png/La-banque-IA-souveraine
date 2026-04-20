@@ -8,6 +8,7 @@ import AppLayout from './components/layout/AppLayout';
 import Login from './pages/Login';
 import Landing from './pages/Landing';
 import PaymentSuccess from './pages/PaymentSuccess';
+import RucheMonitor from './pages/RucheMonitor';
 import PublicAudit from './pages/PublicAudit';
 import Dashboard from './pages/Dashboard';
 import Tokenomics from './pages/Tokenomics';
@@ -154,6 +155,7 @@ const AuthenticatedApp = () => {
         <Route path="/agent-reports" element={<AgentReports />} />
         <Route path="/brochure" element={<SaasBrochure />} />
         <Route path="/monitor" element={<SystemMonitor />} />
+        <Route path="/ruche" element={<RucheMonitor />} />
         <Route path="*" element={<PageNotFound />} />
       </Route>
     </Routes>
