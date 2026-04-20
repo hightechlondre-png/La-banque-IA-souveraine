@@ -1,0 +1,59 @@
+{
+  "summary": "Phase 7 backend testing complete. 13 new tests for Stripe tiered SaaS + premium gating on /api/public/audit. Results: 11/13 PASS, 2/13 FAIL — both failures root-cause the SAME critical bug in GET /api/payments/checkout/status/{session_id} (returns HTTP 500 instead of handling Stripe 'No such checkout.session' error). Regression: 44/44 prior tests still pass (2 pre-existing slow/flaky tests from iter 4 were deselected and can be re-run on demand). Premium gating on /api/public/audit is fully validated: demo user (subscription_tier='professional') → premium:true, watermark 'AEGIS-Q · PROFESSIONAL · Rapport institutionnel', limits.remaining=999, 5 serial calls from same IP all succeed (rate-limit bypassed). Fresh user without tier → premium:false, watermark starts with 'SAMPLE'. Webhook negative test: empty body + no/bad signature → 400 (not 500).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/payments/checkout/status/{session_id}",
+        "issue": "Returns HTTP 500 'Internal Server Error' for any valid session_id because emergentintegrations.StripeCheckout.get_checkout_status() raises stripe._error.InvalidRequestError 'No such checkout.session: cs_test_...' (even for a session that was just created by POST /api/payments/checkout/session — the emergent-proxied Stripe test key does not retain session state between create and retrieve). The handler at server.py:1214 does NOT wrap the call in try/except, so the CheckoutError propagates unhandled and FastAPI returns 500. Impact: (a) polling after a successful checkout is completely broken, (b) the idempotent tier-granting code at server.py:1227-1244 is unreachable for any real payment, (c) frontend /payments/success page cannot display status.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/public/audit (premium concurrent)",
+        "issue": "Under 5 concurrent Claude Opus calls from the same premium bearer, 3 of 5 returned upstream 502 'The preview environment is not responding' before hitting the handler. Rate-limit bypass itself is correct (no 429s observed), but concurrent Opus pressure still triggers the ingress timeout. This is the same pre-existing issue documented in iter 4 — not Phase 7 specific."
+      },
+      {
+        "endpoint": "POST /api/payments/checkout/session (no auth)",
+        "issue": "Returns 403 'Not authenticated' (FastAPI HTTPBearer default) instead of 401. Test accepts both; consumers expecting 401 per spec may need adjustment."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_phase7_payments.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/phase7_results.xml",
+    "/app/test_reports/pytest/regression_full.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Wrap stripe_checkout.get_checkout_status() in get_checkout_status (server.py:1214) with try/except CheckoutError. Either (a) return HTTP 502 with French detail + preserve DB-cached status so the frontend can still show 'pending', OR (b) if sk_test_emergent genuinely can't retrieve sessions, fall back to returning the DB-cached payment_status (initiated/pending) and rely on the webhook for the real status transition. Current 500 breaks all /payments/success polling.",
+    "Investigate why emergent-proxied sk_test_emergent creates session IDs that cannot be retrieved via the Stripe REST API. Possibly the integration needs a different api_key pair for retrieval vs creation, or Stripe events need to be consumed via webhook only.",
+    "Consider returning 401 (not 403) for missing Bearer token on POST /api/payments/checkout/session for consistency with spec (minor).",
+    "Carry-over from iter 4: harden public_audit against concurrent Opus 502s; add retry/backoff."
+  ],
+  "critical_code_review_comments": [
+    "server.py:1214 calls `await stripe_checkout.get_checkout_status(session_id)` with NO try/except — any Stripe SDK error (session not found, network, rate-limited) becomes an unhandled 500. This is the root cause of both Phase 7 failures and the single biggest correctness issue in Phase 7.",
+    "server.py is now ~1774 lines (+240 since iter 4). Stripe payments block (L1104-1286), public audit (L1294+), functions, auth, and entities all live in one file. Split into auth.py, payments.py, public_audit.py is overdue.",
+    "webhook_url is recomputed from request.base_url inside EVERY create_checkout_session / get_checkout_status / stripe_webhook call — this builds a fresh StripeCheckout client each request with no connection reuse. Move StripeCheckout instantiation to module scope or FastAPI startup with a configurable WEBHOOK_URL env var.",
+    "PAYMENT_PACKAGES pricing is hardcoded (L1110-1113). This is correct for security (never trust frontend prices), but the comment says 'enterprise is contact-sales' while the frontend brochure may still try to POST package_id='enterprise' — no explicit rejection test. Consider adding `raise 400 'Contact sales'` for the enterprise path.",
+    "CheckoutSessionBody.origin_url has no URL scheme validation — a malicious client can pass 'javascript:' or a phishing domain and the success_url / cancel_url will embed it. Add AnyHttpUrl validation and/or allowlist of trusted origins.",
+    "Tier-granting logic (L1234-1244) is inside the GET /status handler rather than the webhook handler. This means tier upgrades only happen when the USER polls /status after returning from Stripe — if they close the tab, the tier is never granted despite a successful payment. The webhook already receives the session_id (L1274) but does NOT call db.users.update_one to grant the tier. Duplicate this logic into stripe_webhook for at-least-once delivery.",
+    "payment_transactions collection has no unique index on session_id — two concurrent checkout creations for the same user could theoretically race (unlikely but not prevented).",
+    "Premium detection in public_audit (L1377-1391) silently swallows ANY JWT decode exception (`except Exception: pass`). A genuinely malformed Authorization header from a legitimate premium user will silently fall back to anonymous rate-limited mode. Log at DEBUG level at minimum so we can debug premium users getting 429s.",
+    "_client_ip uses request.headers.get('x-forwarded-for').split(',')[0] — X-Forwarded-For is untrusted from the client; use request.headers.get('x-real-ip') or the ingress-sanctioned header only, or rate-limit bypass becomes trivially spoofable by setting X-Forwarded-For."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase7_payments.py (NEW)"
+  ],
+  "success_rate": {
+    "backend": "93% (55/59: 11/13 Phase 7 + 44/44 regression deselecting 2 pre-existing flaky)",
+    "frontend": "not tested (per request)"
+  },
+  "test_credentials": "demo@aegis-q.mil / Aegis2026! — confirmed subscription_tier='professional' in DB, premium gating active. Fresh users registered per-run via POST /api/auth/register with phase7_fresh_<hex>@aegis-q.mil.",
+  "seed_data_creation": "Phase 7 run creates: ~5 pending payment_transactions docs (Stripe sessions, all payment_status=pending — none will ever complete without real card entry, so they're effectively orphans), ~8 public_audits docs (mix of premium+anonymous under IPs 198.51.100.150-151, 203.0.113.x), 1 fresh user account per test run. No cleanup implemented; consider TTL on payment_transactions where status='initiated' for >24h.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 7 tests live in /app/backend/tests/test_phase7_payments.py (separate from backend_test.py intentionally — keeps Stripe-coupled tests isolable). The 2 failing tests (TestCheckoutStatus::test_status_valid_session, TestPaymentTxPersistence::test_tx_row_created) will PASS once server.py:1214 is wrapped in try/except CheckoutError returning an appropriate non-500 response. To reproduce: authenticate as demo@, POST a checkout session, then GET its status — observe 500 in response + `stripe._error.InvalidRequestError: No such checkout.session` in /var/log/supervisor/backend.err.log. Premium gating is fully working and its 3 tests pass reliably when called SERIALLY (as the suite does). Webhook negative tests correctly return 400 — no positive webhook test is feasible without Stripe CLI. Regression: invoke `pytest backend/tests/backend_test.py --deselect backend/tests/backend_test.py::TestPublicAudit::test_rate_limit_serial_same_ip -k 'not test_market_prices_authenticated'` to reproduce the 44/44. The 2 deselected tests are pre-existing slow (rate-limit, 4x Opus) and pre-existing flaky (CoinGecko usd=0) from iter 4 — not Phase 7 regressions.",
+  "rca of the issue": "Both failing Phase 7 tests share one root cause: server.py line 1214 (`status = await stripe_checkout.get_checkout_status(session_id)`) is not wrapped in try/except. The emergentintegrations library raises CheckoutError wrapping the underlying stripe._error.InvalidRequestError('No such checkout.session') because the emergent-proxied sk_test_emergent key creates sessions whose IDs are not retrievable via the standard Stripe retrieval API (hypothesis: the proxy uses different accounts for create vs retrieve, or sessions auto-expire immediately). Because CheckoutError inherits from Exception (not HTTPException), FastAPI converts it to a generic 500 Internal Server Error. Mitigation: wrap in try/except CheckoutError and (a) if Stripe fetch fails, return the DB-cached row as-is (status='initiated', payment_status='pending'); (b) log the underlying Stripe error at WARNING. This also fixes the currently-unreachable tier-granting code path if the webhook path is also hardened (see code-review comment on tier-granting duplication). Reproduction steps: (1) login demo@, (2) POST /api/payments/checkout/session {package_id:'starter', origin_url:'...'}, (3) GET /api/payments/checkout/status/{returned_session_id} → observe 500. Backend log shows 'No such checkout.session: cs_test_...'."
+}

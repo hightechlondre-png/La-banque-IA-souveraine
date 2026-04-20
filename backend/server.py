@@ -1219,10 +1219,30 @@ async def get_checkout_status(
         "payment_status": status.payment_status,
         "updated_at": now_iso(),
     }
-    await db.payment_transactions.update_one(
+    result = await db.payment_transactions.update_one(
         {"session_id": session_id, "payment_status": {"$ne": "paid"}},
         {"$set": update},
     )
+
+    # If just transitioned to paid, grant subscription tier to user (idempotent via modified_count check)
+    if (
+        status.payment_status == "paid"
+        and result.modified_count > 0
+        and tx.get("user_id")
+        and tx.get("package_id")
+    ):
+        await db.users.update_one(
+            {"id": tx["user_id"]},
+            {
+                "$set": {
+                    "subscription_tier": tx["package_id"],
+                    "subscription_activated_at": now_iso(),
+                    "subscription_session_id": session_id,
+                }
+            },
+        )
+        logger.info("Granted tier %s to user %s via session %s", tx["package_id"], tx["user_id"], session_id)
+
     return {
         "status": status.status,
         "payment_status": status.payment_status,
@@ -1351,7 +1371,27 @@ class PublicAuditBody(BaseModel):
 @api.post("/public/audit")
 async def public_audit(body: PublicAuditBody, request: Request):
     ip = _client_ip(request)
-    await _check_public_rate(ip)
+
+    # Detect optional premium bearer — premium users bypass rate-limit & get no watermark
+    premium_user = None
+    auth_hdr = request.headers.get("authorization") or ""
+    if auth_hdr.lower().startswith("bearer "):
+        token = auth_hdr.split(" ", 1)[1].strip()
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+            uid = payload.get("sub")
+            if uid:
+                candidate = await db.users.find_one(
+                    {"id": uid, "subscription_tier": {"$in": list(PAYMENT_PACKAGES.keys())}},
+                    {"_id": 0, "password_hash": 0},
+                )
+                if candidate:
+                    premium_user = candidate
+        except Exception:
+            pass  # treat as anonymous
+
+    if not premium_user:
+        await _check_public_rate(ip)
 
     prompt = (
         f"Tu es un auditeur de sécurité expert en smart contracts Solidity.\n"
@@ -1379,6 +1419,12 @@ async def public_audit(body: PublicAuditBody, request: Request):
     audit_id = str(uuid.uuid4())
     badge_token = _sign_badge(audit_id, score, body.name)
 
+    watermark = (
+        f"AEGIS-Q · {premium_user['subscription_tier'].upper()} · Rapport institutionnel"
+        if premium_user
+        else "SAMPLE · AEGIS-Q Public API · Non institutionnel"
+    )
+
     doc = {
         "id": audit_id,
         "contract_name": body.name,
@@ -1387,8 +1433,10 @@ async def public_audit(body: PublicAuditBody, request: Request):
         "result": result,
         "badge_token": badge_token,
         "ip_prefix": ip.split(".")[0] if "." in ip else ip[:4],
+        "owner_id": premium_user["id"] if premium_user else None,
+        "owner_tier": premium_user["subscription_tier"] if premium_user else None,
         "created_at": now_iso(),
-        "watermark": "SAMPLE · AEGIS-Q Public API · Non institutionnel",
+        "watermark": watermark,
     }
     await db.public_audits.insert_one(dict(doc))
 
@@ -1397,11 +1445,15 @@ async def public_audit(body: PublicAuditBody, request: Request):
         "score": score,
         "result": result,
         "badge_token": badge_token,
-        "watermark": doc["watermark"],
+        "watermark": watermark,
+        "premium": bool(premium_user),
         "created_at": doc["created_at"],
         "limits": {
             "per_ip_per_hour": _PUBLIC_RATE_LIMIT,
-            "remaining": _PUBLIC_RATE_LIMIT - len(_PUBLIC_IP_RATE.get(ip, [])),
+            "remaining": (
+                999 if premium_user
+                else _PUBLIC_RATE_LIMIT - len(_PUBLIC_IP_RATE.get(ip, []))
+            ),
         },
     }
 
