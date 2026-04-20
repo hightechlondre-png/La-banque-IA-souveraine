@@ -209,9 +209,13 @@ async def _compute_aq_price() -> Dict[str, float]:
 async def market_prices(user: Dict[str, Any] = Depends(get_current_user)):
     coins = await _fetch_coingecko()
     aq = await _compute_aq_price()
+    upstream_status = coins.get("_upstream_status", "ok") if isinstance(coins, dict) else "ok"
+    # Strip internal marker from returned coins dict
+    clean_coins = {k: v for k, v in coins.items() if not k.startswith("_")}
     return {
-        "coins": coins,
+        "coins": clean_coins,
         "aq": aq,
+        "upstream_status": upstream_status,
         "ts": now_iso(),
     }
 
@@ -1101,6 +1105,7 @@ async def invoke_function(
 # Public API — unauthenticated smart-contract audit + signed badge
 # ---------------------------------------------------------------------------
 _PUBLIC_IP_RATE: Dict[str, List[float]] = {}
+_PUBLIC_RATE_LOCK = asyncio.Lock()
 _PUBLIC_RATE_LIMIT = 3            # audits per window
 _PUBLIC_RATE_WINDOW = 3600        # 1 hour
 _PUBLIC_AUDIT_MAX_CHARS = 12000
@@ -1113,16 +1118,29 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _check_public_rate(ip: str):
+async def _check_public_rate(ip: str):
+    """Concurrency-safe sliding-window rate limiter with periodic TTL pruning."""
     now = _time.time()
-    recent = [t for t in _PUBLIC_IP_RATE.get(ip, []) if t > now - _PUBLIC_RATE_WINDOW]
-    if len(recent) >= _PUBLIC_RATE_LIMIT:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Limite atteinte: {_PUBLIC_RATE_LIMIT} audits/heure par IP. Créez un compte pour auditer sans limite.",
-        )
-    recent.append(now)
-    _PUBLIC_IP_RATE[ip] = recent
+    async with _PUBLIC_RATE_LOCK:
+        # Prune stale IPs (any IP whose most-recent call is older than the window)
+        # Run a sweep at most ~1/1000 calls to keep cost low.
+        if len(_PUBLIC_IP_RATE) > 0 and hash(ip) % 1000 == 0:
+            stale = [
+                key for key, ts_list in _PUBLIC_IP_RATE.items()
+                if not ts_list or ts_list[-1] < now - _PUBLIC_RATE_WINDOW
+            ]
+            for key in stale:
+                _PUBLIC_IP_RATE.pop(key, None)
+
+        recent = [t for t in _PUBLIC_IP_RATE.get(ip, []) if t > now - _PUBLIC_RATE_WINDOW]
+        if len(recent) >= _PUBLIC_RATE_LIMIT:
+            _PUBLIC_IP_RATE[ip] = recent
+            raise HTTPException(
+                status_code=429,
+                detail=f"Limite atteinte: {_PUBLIC_RATE_LIMIT} audits/heure par IP. Créez un compte pour auditer sans limite.",
+            )
+        recent.append(now)
+        _PUBLIC_IP_RATE[ip] = recent
 
 
 def _sign_badge(audit_id: str, score: int, contract_name: str) -> str:
@@ -1157,13 +1175,13 @@ def _verify_badge(token: str) -> Optional[Dict[str, Any]]:
 
 class PublicAuditBody(BaseModel):
     code: str = Field(min_length=20, max_length=_PUBLIC_AUDIT_MAX_CHARS)
-    name: str = Field(default="Contract.sol", max_length=80)
+    name: str = Field(default="Contract.sol", max_length=80, pattern=r"^[^|\n\r\t]*$")
 
 
 @api.post("/public/audit")
 async def public_audit(body: PublicAuditBody, request: Request):
     ip = _client_ip(request)
-    _check_public_rate(ip)
+    await _check_public_rate(ip)
 
     prompt = (
         f"Tu es un auditeur de sécurité expert en smart contracts Solidity.\n"
