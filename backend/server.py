@@ -307,8 +307,6 @@ async def register(body: RegisterIn):
         "password_hash": pwd_ctx.hash(body.password),
         "created_at": now_iso(),
     }
-    uid = payload["sub"]
-    existing = await db.users.find_one({"id": uid})
     await db.users.insert_one(user_doc)
     public = {k: v for k, v in user_doc.items() if k != "password_hash"}
     public.pop("_id", None)
@@ -1826,7 +1824,22 @@ async def seed_data():
 @app.on_event("startup")
 async def on_startup():
     await seed_data()
-
+    # Indexes for scale & retention
+    try:
+        await db.payment_transactions.create_index("session_id", unique=True)
+    except Exception as e:
+        logger.warning("payment_transactions unique index: %s", e)
+    try:
+        # 180 days TTL on analytics_events.created_at — requires BSON datetime, not ISO string
+        # Fallback: keep events but no auto-expire (acceptable for now)
+        await db.analytics_events.create_index("created_at")
+    except Exception as e:
+        logger.warning("analytics_events index: %s", e)
+    try:
+        await db.public_audits.create_index("created_at")
+    except Exception as e:
+        logger.warning("public_audits index: %s", e)
+    logger.info("AEGIS-Q backend ready (indexes ensured)")
 
 
 
