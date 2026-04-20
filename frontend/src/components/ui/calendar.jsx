@@ -12,7 +12,7 @@ function Calendar({
   ...props
 }) {
   return (
-    <DayPicker
+    (<DayPicker
       showOutsideDays={showOutsideDays}
       className={cn("p-3", className)}
       classNames={{
@@ -63,7 +63,7 @@ function Calendar({
           <ChevronRight className={cn("h-4 w-4", className)} {...props} />
         ),
       }}
-      {...props} />
+      {...props} />)
   );
 }
 Calendar.displayName = "Calendar"
