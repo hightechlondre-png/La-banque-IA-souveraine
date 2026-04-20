@@ -6,6 +6,7 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import AppLayout from './components/layout/AppLayout';
 import Login from './pages/Login';
+import Landing from './pages/Landing';
 import PublicAudit from './pages/PublicAudit';
 import Dashboard from './pages/Dashboard';
 import Tokenomics from './pages/Tokenomics';
@@ -71,11 +72,25 @@ const RequireAuth = ({ children }) => {
   return children;
 };
 
+// Root: authenticated → Dashboard, else → Landing
+const RootRoute = () => {
+  const { isAuthenticated, isLoadingAuth } = useAuth();
+  if (isLoadingAuth) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-background">
+        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+      </div>
+    );
+  }
+  return isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />;
+};
+
 const AuthenticatedApp = () => {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/public-audit" element={<PublicAudit />} />
+      <Route path="/" element={<RootRoute />} />
       <Route
         element={
           <RequireAuth>
@@ -83,7 +98,7 @@ const AuthenticatedApp = () => {
           </RequireAuth>
         }
       >
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/tokenomics" element={<Tokenomics />} />
         <Route path="/staking" element={<Staking />} />
         <Route path="/governance" element={<Governance />} />

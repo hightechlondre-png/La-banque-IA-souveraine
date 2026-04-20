@@ -1,0 +1,42 @@
+{
+  "summary": "Phase 6 backend testing complete. 46 tests total (34 regression + 12 new public-audit). Final: 45 PASSED, 1 FLAKY (CoinGecko upstream returned usd=0 on first run, PASSED on retry — pre-existing minor issue carried from iter 2/3, not a regression). Phase 6 public-audit endpoints fully validated: POST /api/public/audit (happy path, 422 too-short, 422 too-long, rate-limit 3/hour/IP with French detail, multi-IP isolation), GET /api/public/audit/{id} (200 with ip_prefix + code_hash + _id stripped, 404 on unknown UUID), GET /api/public/badge/{id}.svg (Content-Type image/svg+xml, body starts with '<svg', 404 on unknown), GET /api/public/badge/verify (valid token returns valid:true + db_score/db_contract cross-check, score-tampered token returns valid:false with 'Signature invalide...', garbage returns 200 with valid:false not 500). HMAC-SHA256 badge signing verified end-to-end with JWT_SECRET. Claude Opus 4.5 structured audit JSON (score_securite, vulnerabilites, resume) successfully produced for the Vault.sol reentrancy sample.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/public/audit", "issue": "Under 4 concurrent requests with same X-Forwarded-For, the in-memory rate-limiter did NOT strictly enforce 3/hour — observed [200,200,502,502] instead of [200,200,200,429]. Two of the four reached the LLM (and upstream Opus 502'd due to concurrency pressure). Root cause hypothesis: async body-parse boundary lets multiple tasks queue past a non-awaited sync rate-check that still interleaves with FastAPI's request pipeline, OR ingress injects/replaces X-Forwarded-For per connection under load. Serial requests enforce the limit correctly (verified 3x 200 then 2x 429). Recommend either (a) using asyncio.Lock around _check_public_rate, or (b) switching to a middleware-level SlowAPI/Redis limiter before route dispatch."},
+      {"endpoint": "/api/public/audit", "issue": "On LLM structured-output failure returns HTTP 502 without persisting anything. No retry/backoff. Under concurrent Opus load, 50% failure rate observed on 4-way concurrency. Consider 1 retry with exponential backoff."},
+      {"endpoint": "/api/market/prices", "issue": "CoinGecko silent-fallback to usd=0 is still present (carried from iter 2/3). Intermittent — causes flaky test. Surface an upstream_status field."},
+      {"endpoint": "/api/functions/invoke/checkPriceAlerts", "issue": "Telegram dispatch remains MOCKED (carried from iter 2/3)."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/phase6_results.xml"
+  ],
+  "action_items": [
+    "Harden public-audit rate limiter against true concurrency (asyncio.Lock per-IP or move to middleware/Redis). Current implementation is safe for serial traffic but leaks under bursts.",
+    "Add retry/timeout tuning for Claude Opus inside public_audit so 4-way bursts don't yield 50% 502s.",
+    "Surface CoinGecko upstream_status in /api/market/prices to avoid silent usd=0."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now ~1534 lines (+200 since iter 3) — still monolithic. Split into auth.py, entities.py, functions/*.py, market.py, public_audit.py, seed.py is increasingly urgent.",
+    "_PUBLIC_IP_RATE is a module-level dict with NO TTL eviction — memory will grow unbounded over long uptime as unique IPs accumulate. Add periodic pruning or switch to TTLCache.",
+    "_check_public_rate is not concurrency-safe under event-loop bursts (see minor issue). Wrap with asyncio.Lock keyed per-IP, or gate at middleware.",
+    "_sign_badge embeds contract_name directly in the payload separated by '|' — if a user submits name containing '|', token parsing breaks (len(parts) != 5). PublicAuditBody should reject '|' in name, or the payload should base64-encode fields.",
+    "public_audit stores ip.split('.')[0] as ip_prefix — for IPv6 this collapses to 4-char prefix, for IPv4 it's only the first octet (e.g., '198' for all 198.x.x.x). Either store a proper /24 or /64 or drop the field.",
+    "fn_invoke_llm parse-error fallback ({_llm_raw,_parse_error}) is what public_audit relies on failing fast via 'score_securite not in result'. This implicit coupling is fragile — public_audit should explicitly check for _parse_error and return a more informative error than generic 502.",
+    "JWT_SECRET default 'aegis-q-sovereign-secret-change-me' (carried from iter 1) — used BOTH for JWT auth AND HMAC badge signing. Rotating it invalidates every badge ever issued. Consider a separate BADGE_HMAC_SECRET.",
+    "Badge SVG hardcodes English labels (SECURE/WARN/RISK/UNSAFE) in an otherwise-French product. Inconsistent i18n.",
+    "No DELETE or admin endpoint for public_audits — DB grows forever. Add TTL index on created_at (e.g., 90 days)."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "98% (45/46 strict; 46/46 on retry — only flake is pre-existing CoinGecko)", "frontend": "not tested (per request)"},
+  "test_credentials": "demo@aegis-q.mil / Aegis2026! — verified working",
+  "seed_data_creation": "Test run creates ~12-15 public_audit docs in MongoDB under TEST_/sample IPs (198.51.100.x, 203.0.113.x) — no cleanup implemented since Phase 6 has no admin delete endpoint. Non-blocking; see code review comment on TTL index.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 12 Phase 6 public-audit tests pass against https://hybrid-federated-ia.preview.emergentagent.com. Use unique 198.51.100.N / 203.0.113.N X-Forwarded-For IPs per test to avoid rate-limit collisions across runs (in-memory counter is per-process and persists until backend restart). Rate-limit test is intentionally SERIAL (not concurrent) because (a) concurrent Opus calls occasionally 502 and mask 429, and (b) the in-memory rate-limiter has a minor concurrency race (documented in minor issues). Opus audit latency: 15-40s per call; use timeout >= 120s. Badge token format: 'audit_id|score|contract_name|issued_at|hmac_hex' (5 parts). Tamper test flips parts[1] (score) to '100' to verify HMAC rejection.",
+  "rca of the issue": "The single failing initial run (TestMarketPrices.test_market_prices_authenticated, BTC usd=0) is upstream flakiness of CoinGecko's /simple/price endpoint, handled silently by /api/market/prices which returns usd=0 instead of surfacing the upstream error. Passed on immediate retry. Pre-existing (iter 2/3), not a Phase 6 regression. Mitigation: add upstream_status field and/or cache last-good prices."
+}

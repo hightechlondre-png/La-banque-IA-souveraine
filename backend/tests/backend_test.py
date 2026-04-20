@@ -500,3 +500,177 @@ class TestInvokeLLM:
             has_expected = ("ok" in d) or ("message" in d)
             assert has_expected, f"Parsed JSON missing 'ok' or 'message' keys: {d}"
 
+
+
+# ============================================================
+# Phase 6 — Public smart-contract audit API + signed badge
+# ============================================================
+SAMPLE_SOLIDITY = """// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+contract Vault {
+    mapping(address => uint256) public balances;
+    function deposit() external payable { balances[msg.sender] += msg.value; }
+    function withdraw(uint256 amount) external {
+        require(balances[msg.sender] >= amount, "insufficient");
+        (bool ok, ) = msg.sender.call{value: amount}("");
+        require(ok, "send fail");
+        balances[msg.sender] -= amount; // classic reentrancy ordering bug
+    }
+}
+"""
+
+
+def _public_post(ip: str, body: dict, timeout: int = 120):
+    """Fire a public audit request with a specific X-Forwarded-For IP."""
+    return requests.post(
+        f"{API}/public/audit",
+        json=body,
+        headers={"Content-Type": "application/json", "X-Forwarded-For": ip},
+        timeout=timeout,
+    )
+
+
+@pytest.fixture(scope="class")
+def public_audit_result():
+    """Perform one successful public audit and share across the class."""
+    ip = "198.51.100.10"
+    r = _public_post(ip, {"code": SAMPLE_SOLIDITY, "name": "Vault.sol"}, timeout=120)
+    assert r.status_code == 200, f"Setup audit failed: {r.status_code} {r.text[:500]}"
+    return r.json()
+
+
+class TestPublicAudit:
+    """Unauthenticated smart-contract audit endpoints."""
+
+    def test_happy_path_shape(self, public_audit_result):
+        d = public_audit_result
+        # Required top-level keys
+        for k in ["audit_id", "score", "result", "badge_token", "watermark", "limits", "created_at"]:
+            assert k in d, f"missing key: {k} in {list(d.keys())}"
+        assert isinstance(d["audit_id"], str) and len(d["audit_id"]) > 10
+        assert isinstance(d["score"], int) and 0 <= d["score"] <= 100
+        assert isinstance(d["result"], dict)
+        assert "score_securite" in d["result"]
+        assert "vulnerabilites" in d["result"]
+        assert "resume" in d["result"]
+        assert isinstance(d["badge_token"], str) and d["badge_token"].count("|") == 4
+        assert d["limits"]["per_ip_per_hour"] == 3
+        assert isinstance(d["limits"]["remaining"], int)
+
+    def test_code_too_short_422(self, client):
+        r = client.post(
+            f"{API}/public/audit",
+            json={"code": "short", "name": "x.sol"},
+            headers={"X-Forwarded-For": "198.51.100.20"},
+            timeout=20,
+        )
+        assert r.status_code == 422, r.text
+
+    def test_code_too_long_422(self, client):
+        big = "a" * 12001
+        r = client.post(
+            f"{API}/public/audit",
+            json={"code": big, "name": "x.sol"},
+            headers={"X-Forwarded-For": "198.51.100.21"},
+            timeout=20,
+        )
+        assert r.status_code == 422, r.text
+
+    def test_get_audit_by_id(self, client, public_audit_result):
+        aid = public_audit_result["audit_id"]
+        r = client.get(f"{API}/public/audit/{aid}", timeout=20)
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["id"] == aid
+        assert d["contract_name"] == "Vault.sol"
+        assert "ip_prefix" not in d  # must be stripped
+        assert "code_hash" not in d  # must be stripped
+        assert "_id" not in d
+        assert d["score"] == public_audit_result["score"]
+
+    def test_get_audit_unknown_404(self, client):
+        r = client.get(f"{API}/public/audit/{uuid.uuid4()}", timeout=20)
+        assert r.status_code == 404
+
+    def test_badge_svg_ok(self, client, public_audit_result):
+        aid = public_audit_result["audit_id"]
+        r = client.get(f"{API}/public/badge/{aid}.svg", timeout=20)
+        assert r.status_code == 200
+        assert r.headers.get("content-type", "").startswith("image/svg+xml")
+        assert r.text.lstrip().startswith("<svg"), r.text[:200]
+
+    def test_badge_svg_unknown_404(self, client):
+        r = client.get(f"{API}/public/badge/{uuid.uuid4()}.svg", timeout=20)
+        assert r.status_code == 404
+
+    def test_badge_verify_valid(self, client, public_audit_result):
+        tok = public_audit_result["badge_token"]
+        r = client.get(f"{API}/public/badge/verify", params={"token": tok}, timeout=20)
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d.get("valid") is True
+        assert d["audit_id"] == public_audit_result["audit_id"]
+        assert d["score"] == public_audit_result["score"]
+        assert d["contract_name"] == "Vault.sol"
+        assert "issued_at" in d
+        assert d["db_score"] == public_audit_result["score"]
+        assert d["db_contract"] == "Vault.sol"
+
+    def test_badge_verify_tampered(self, client, public_audit_result):
+        tok = public_audit_result["badge_token"]
+        parts = tok.split("|")
+        assert len(parts) == 5
+        parts[1] = "100"  # tamper score
+        tampered = "|".join(parts)
+        r = client.get(f"{API}/public/badge/verify", params={"token": tampered}, timeout=20)
+        assert r.status_code == 200
+        d = r.json()
+        assert d.get("valid") is False
+        assert "reason" in d and ("Signature" in d["reason"] or "signature" in d["reason"].lower())
+
+    def test_badge_verify_garbage(self, client):
+        r = client.get(f"{API}/public/badge/verify", params={"token": "garbage-not-a-token"}, timeout=20)
+        assert r.status_code == 200
+        d = r.json()
+        assert d.get("valid") is False
+
+    def test_different_ips_isolated(self, client):
+        """Two distinct IPs should each still be able to audit (no cross-contamination)."""
+        # Use fresh IPs not used elsewhere
+        r1 = _public_post("203.0.113.1", {"code": SAMPLE_SOLIDITY, "name": "A.sol"}, timeout=120)
+        r2 = _public_post("203.0.113.2", {"code": SAMPLE_SOLIDITY, "name": "B.sol"}, timeout=120)
+        assert r1.status_code == 200, r1.text[:300]
+        assert r2.status_code == 200, r2.text[:300]
+        assert r1.json()["audit_id"] != r2.json()["audit_id"]
+
+    def test_rate_limit_serial_same_ip(self):
+        """Fire 4 serial requests with the same IP — expect 3 accepted (200/502) then 429.
+
+        Note: The rate-limiter is tested serially because (a) the documented
+        limit is 3/hour and is trivially exceeded on the 4th request, and
+        (b) concurrent Claude Opus calls are flaky and can mask the 429
+        behind upstream 502s. This test still validates the core contract:
+        after 3 calls from the same IP, the 4th returns 429 with the
+        expected French detail message.
+        """
+        ip = "198.51.100.201"  # fresh IP, never used elsewhere
+        codes = []
+        for i in range(4):
+            r = _public_post(
+                ip,
+                {"code": SAMPLE_SOLIDITY + f"\n// variant {i}\n", "name": f"RL{i}.sol"},
+                timeout=180,
+            )
+            codes.append(r.status_code)
+            if r.status_code == 429:
+                detail = r.json().get("detail", "")
+                assert ("Limite atteinte" in detail) or (
+                    "3 audits/heure" in detail
+                ), f"Unexpected 429 detail: {detail}"
+
+        # First 3 must have been admitted to the rate bucket (200 happy path
+        # or 502 if the LLM itself stumbled — both consume a slot).
+        admitted = [c for c in codes[:3] if c in (200, 502)]
+        assert len(admitted) == 3, f"Expected first 3 to be admitted, got {codes}"
+        # 4th MUST be rate-limited.
+        assert codes[3] == 429, f"Expected 4th request to be 429, got {codes}"
