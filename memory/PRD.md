@@ -83,6 +83,20 @@ Frontend uses a drop-in `@/api/base44Client` that mimics base44 SDK so all 50+ p
 - **AIAuditPage now works end-to-end**: paste Solidity, Claude Opus 4.5 returns {score_securite, vulnerabilites[], points_positifs[], resume, conforme_erc20, post_quantique}. PDF export ready.
 - Tested with VulnerableVault.sol → 15/100 score, 1 critical reentrancy + 1 high + 8 total findings, proper Checks-Effects-Interactions recommendation.
 
+### Phase 5b — Hardening after testing_agent iter 3 (34/34 PASS)
+- `_extract_json_block` uses `JSONDecoder.raw_decode` scanner (balance-safe, tolerant to stray braces in LLM prose)
+- `StakingAdviceBody` bounded: `amount_aq ≤ 1B`, `lock_days ≤ 3650`, `multiplier ≤ 10` (anti prompt-injection / DoS)
+
+### Phase 6 — Public API + Signed Badge (monetization funnel)
+- **`POST /api/public/audit`** — unauthenticated, rate-limited 3/hour/IP (via `X-Forwarded-For` prefix). Returns `{audit_id, score, result, badge_token, watermark, limits{remaining}}`. Persists in `public_audits` with `code_hash` (SHA-256) for dedupe.
+- **`GET /api/public/audit/{id}`** — consultation publique (hide ip_prefix & code_hash).
+- **`GET /api/public/badge/{id}.svg`** — SVG embedable 260x44 with score-based color (SECURE/WARN/RISK/UNSAFE) and contract name.
+- **`GET /api/public/badge/verify?token=...`** — HMAC-SHA256 verification. Returns `{valid, audit_id, score, contract_name, issued_at, db_score, db_contract}`. Tampered tokens → `{valid:false}`.
+- Signing scheme: `payload = audit_id|score|contract_name|issued_at`, sig = HMAC-SHA256(JWT_SECRET, payload).
+- **Frontend page `/public-audit`** (no login required) — hero, textarea Solidity, example loader, score dial (SVG gauge circular), vulnerabilites list with severity color-coded pills, badge SVG preview + markdown snippet copyable for README/GitHub.
+- Rate-limit validated: 4 concurrent calls from same IP → 3x 200 + 1x 429 with clear FR message.
+- Ready for marketing loops: public URL + embeddable badge = viral distribution channel.
+
 ## Known MOCKED elements
 - Telegram notifications in checkPriceAlerts (stub — no real bot send)
 

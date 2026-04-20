@@ -22,6 +22,9 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 import jwt
+import hmac
+import hashlib
+import time as _time
 import httpx
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
@@ -1092,6 +1095,195 @@ async def invoke_function(
     if not handler:
         raise HTTPException(status_code=404, detail=f"Function '{name}' not found")
     return await handler(body or {}, user)
+
+
+# ---------------------------------------------------------------------------
+# Public API — unauthenticated smart-contract audit + signed badge
+# ---------------------------------------------------------------------------
+_PUBLIC_IP_RATE: Dict[str, List[float]] = {}
+_PUBLIC_RATE_LIMIT = 3            # audits per window
+_PUBLIC_RATE_WINDOW = 3600        # 1 hour
+_PUBLIC_AUDIT_MAX_CHARS = 12000
+
+
+def _client_ip(request: Request) -> str:
+    xf = request.headers.get("x-forwarded-for")
+    if xf:
+        return xf.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _check_public_rate(ip: str):
+    now = _time.time()
+    recent = [t for t in _PUBLIC_IP_RATE.get(ip, []) if t > now - _PUBLIC_RATE_WINDOW]
+    if len(recent) >= _PUBLIC_RATE_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Limite atteinte: {_PUBLIC_RATE_LIMIT} audits/heure par IP. Créez un compte pour auditer sans limite.",
+        )
+    recent.append(now)
+    _PUBLIC_IP_RATE[ip] = recent
+
+
+def _sign_badge(audit_id: str, score: int, contract_name: str) -> str:
+    """HMAC-SHA256 signed badge token. Compact, URL-safe."""
+    payload = f"{audit_id}|{score}|{contract_name}|{now_iso()}"
+    sig = hmac.new(JWT_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}|{sig}"
+
+
+def _verify_badge(token: str) -> Optional[Dict[str, Any]]:
+    try:
+        parts = token.split("|")
+        if len(parts) != 5:
+            return None
+        audit_id, score, contract_name, issued_at, sig = parts
+        expected_payload = f"{audit_id}|{score}|{contract_name}|{issued_at}"
+        expected_sig = hmac.new(
+            JWT_SECRET.encode(), expected_payload.encode(), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(expected_sig, sig):
+            return None
+        return {
+            "audit_id": audit_id,
+            "score": int(score),
+            "contract_name": contract_name,
+            "issued_at": issued_at,
+            "valid": True,
+        }
+    except Exception:
+        return None
+
+
+class PublicAuditBody(BaseModel):
+    code: str = Field(min_length=20, max_length=_PUBLIC_AUDIT_MAX_CHARS)
+    name: str = Field(default="Contract.sol", max_length=80)
+
+
+@api.post("/public/audit")
+async def public_audit(body: PublicAuditBody, request: Request):
+    ip = _client_ip(request)
+    _check_public_rate(ip)
+
+    prompt = (
+        f"Tu es un auditeur de sécurité expert en smart contracts Solidity.\n"
+        f"Analyse ce contrat et retourne un rapport JSON structuré.\n\n"
+        f"Contrat à auditer ({body.name}):\n```solidity\n{body.code}\n```\n\n"
+        "Retourne UNIQUEMENT un JSON valide avec cette structure exacte:\n"
+        '{"score_securite":<0-100>,"vulnerabilites":[{"titre":"...","severite":"CRITIQUE|ÉLEVÉE|MOYENNE|FAIBLE|INFO","categorie":"...","ligne":<n|null>,"description":"...","recommandation":"..."}],"points_positifs":["..."],"resume":"..."}'
+    )
+
+    pseudo_user = {"id": f"public-{ip}"}
+    result = await fn_invoke_llm(
+        {"prompt": prompt, "response_json_schema": {"type": "object"}},
+        pseudo_user,
+    )
+
+    if not isinstance(result, dict) or "score_securite" not in result:
+        raise HTTPException(status_code=502, detail="L'IA n'a pas produit un audit structuré.")
+
+    try:
+        score = int(round(float(result.get("score_securite", 0))))
+    except Exception:
+        score = 0
+    score = max(0, min(100, score))
+
+    audit_id = str(uuid.uuid4())
+    badge_token = _sign_badge(audit_id, score, body.name)
+
+    doc = {
+        "id": audit_id,
+        "contract_name": body.name,
+        "code_hash": hashlib.sha256(body.code.encode()).hexdigest(),
+        "score": score,
+        "result": result,
+        "badge_token": badge_token,
+        "ip_prefix": ip.split(".")[0] if "." in ip else ip[:4],
+        "created_at": now_iso(),
+        "watermark": "SAMPLE · AEGIS-Q Public API · Non institutionnel",
+    }
+    await db.public_audits.insert_one(dict(doc))
+
+    return {
+        "audit_id": audit_id,
+        "score": score,
+        "result": result,
+        "badge_token": badge_token,
+        "watermark": doc["watermark"],
+        "created_at": doc["created_at"],
+        "limits": {
+            "per_ip_per_hour": _PUBLIC_RATE_LIMIT,
+            "remaining": _PUBLIC_RATE_LIMIT - len(_PUBLIC_IP_RATE.get(ip, [])),
+        },
+    }
+
+
+@api.get("/public/audit/{audit_id}")
+async def get_public_audit(audit_id: str):
+    doc = await db.public_audits.find_one(
+        {"id": audit_id},
+        {"_id": 0, "ip_prefix": 0, "code_hash": 0},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Audit introuvable")
+    return doc
+
+
+@api.get("/public/badge/verify")
+async def verify_badge(token: str):
+    info = _verify_badge(token)
+    if not info:
+        return {"valid": False, "reason": "Signature invalide ou format incorrect"}
+    doc = await db.public_audits.find_one(
+        {"id": info["audit_id"]},
+        {"_id": 0, "score": 1, "contract_name": 1},
+    )
+    if not doc:
+        return {"valid": False, "reason": "Audit supprimé ou introuvable", **info}
+    info["db_score"] = doc.get("score")
+    info["db_contract"] = doc.get("contract_name")
+    return info
+
+
+@api.get("/public/badge/{audit_id}.svg")
+async def badge_svg(audit_id: str):
+    from fastapi.responses import Response as _Response
+
+    doc = await db.public_audits.find_one(
+        {"id": audit_id},
+        {"_id": 0, "score": 1, "contract_name": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Audit introuvable")
+
+    score = int(doc["score"])
+    contract = (doc["contract_name"] or "Contract.sol")[:30]
+    if score >= 80:
+        color, label = "#10b981", "SECURE"
+    elif score >= 60:
+        color, label = "#f59e0b", "WARN"
+    elif score >= 40:
+        color, label = "#f97316", "RISK"
+    else:
+        color, label = "#ef4444", "UNSAFE"
+
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="260" height="44" role="img">
+  <title>Audited by AEGIS-Q · {score}/100</title>
+  <linearGradient id="g" x2="0" y2="100%">
+    <stop offset="0" stop-color="#1a1f2c"/>
+    <stop offset="1" stop-color="#0b0e14"/>
+  </linearGradient>
+  <rect width="260" height="44" rx="6" fill="url(#g)"/>
+  <rect x="1" y="1" width="258" height="42" rx="5" fill="none" stroke="{color}" stroke-opacity="0.5"/>
+  <g font-family="Verdana,Geneva,sans-serif" fill="#e5e7eb">
+    <text x="14" y="17" font-size="11" font-weight="600">AEGIS-Q · {label}</text>
+    <text x="14" y="32" font-size="9" fill="#9ca3af">{contract}</text>
+    <text x="246" y="28" text-anchor="end" font-size="18" font-weight="700" fill="{color}">{score}/100</text>
+  </g>
+</svg>"""
+    return _Response(content=svg, media_type="image/svg+xml")
+
+
 
 
 # ---------------------------------------------------------------------------

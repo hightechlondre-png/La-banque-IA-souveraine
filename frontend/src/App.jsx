@@ -6,6 +6,7 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import AppLayout from './components/layout/AppLayout';
 import Login from './pages/Login';
+import PublicAudit from './pages/PublicAudit';
 import Dashboard from './pages/Dashboard';
 import Tokenomics from './pages/Tokenomics';
 import Staking from './pages/Staking';
@@ -74,6 +75,7 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/public-audit" element={<PublicAudit />} />
       <Route
         element={
           <RequireAuth>
