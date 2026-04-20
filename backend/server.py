@@ -214,11 +214,11 @@ async def market_prices(user: Dict[str, Any] = Depends(get_current_user)):
 
 
 class StakingAdviceBody(BaseModel):
-    amount_aq: float = Field(gt=0)
-    pool_name: str = Field(default="Gold")
-    pool_apy_pct: float = Field(gt=0, default=25)
-    lock_days: int = Field(gt=0, default=180)
-    multiplier: float = Field(gt=0, default=1.5)
+    amount_aq: float = Field(gt=0, le=1_000_000_000)  # cap at 1B AQ (total supply = 100M so this is permissive)
+    pool_name: str = Field(default="Gold", max_length=40)
+    pool_apy_pct: float = Field(gt=0, le=1000, default=25)
+    lock_days: int = Field(gt=0, le=3650, default=180)  # max 10 years
+    multiplier: float = Field(gt=0, le=10, default=1.5)
 
 
 @api.post("/market/staking-advice")
@@ -504,14 +504,14 @@ import json as _json_mod
 
 def _extract_json_block(text: str) -> Optional[Any]:
     """Try to parse a JSON object/array from an LLM response.
-    Handles ```json fences, bare JSON, and leading/trailing prose.
+    Handles ```json fences, bare JSON, and leading/trailing prose using a
+    balanced-brace / bracket scanner (robust to stray braces in prose).
     """
     if not text:
         return None
-    # Strip markdown fences
     stripped = text.strip()
+    # Strip markdown fences
     if stripped.startswith("```"):
-        # remove first fence line and any trailing fence
         lines = stripped.splitlines()
         lines = lines[1:]
         if lines and lines[-1].strip().startswith("```"):
@@ -523,13 +523,14 @@ def _extract_json_block(text: str) -> Optional[Any]:
         return _json_mod.loads(stripped)
     except Exception:
         pass
-    # Second: find first { or [ and matching last } or ]
-    for open_ch, close_ch in (("{", "}"), ("[", "]")):
-        start = stripped.find(open_ch)
-        end = stripped.rfind(close_ch)
-        if start != -1 and end != -1 and end > start:
+
+    # Second: use JSONDecoder.raw_decode, scanning for the first '{' or '['.
+    decoder = _json_mod.JSONDecoder()
+    for i, ch in enumerate(stripped):
+        if ch in ("{", "["):
             try:
-                return _json_mod.loads(stripped[start : end + 1])
+                obj, _ = decoder.raw_decode(stripped[i:])
+                return obj
             except Exception:
                 continue
     return None
