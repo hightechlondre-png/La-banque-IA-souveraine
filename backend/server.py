@@ -1878,6 +1878,31 @@ async def _track(
         logger.warning("track event failed: %s", e)
 
 
+# Simple IP-based rate limiter for /api/analytics/track to prevent funnel pollution.
+_TRACK_IP_RATE: Dict[str, List[float]] = {}
+_TRACK_RATE_LIMIT = 100          # events per IP per window
+_TRACK_RATE_WINDOW = 60          # 1 minute
+_TRACK_RATE_LOCK = asyncio.Lock()
+
+
+async def _check_track_rate(ip: str) -> bool:
+    """Return True if allowed, False if rate-limited."""
+    now = _time.time()
+    async with _TRACK_RATE_LOCK:
+        recent = [t for t in _TRACK_IP_RATE.get(ip, []) if t > now - _TRACK_RATE_WINDOW]
+        if len(recent) >= _TRACK_RATE_LIMIT:
+            _TRACK_IP_RATE[ip] = recent
+            return False
+        recent.append(now)
+        _TRACK_IP_RATE[ip] = recent
+        # Cheap pruning every ~1000 calls
+        if len(_TRACK_IP_RATE) > 0 and hash(ip) % 1000 == 0:
+            stale = [k for k, ts in _TRACK_IP_RATE.items() if not ts or ts[-1] < now - _TRACK_RATE_WINDOW]
+            for k in stale:
+                _TRACK_IP_RATE.pop(k, None)
+        return True
+
+
 class TrackBody(BaseModel):
     event: str = Field(min_length=1, max_length=80, pattern=r"^[a-z_]+$")
     session_key: Optional[str] = Field(default=None, max_length=80)
@@ -1887,7 +1912,10 @@ class TrackBody(BaseModel):
 @api.post("/analytics/track")
 async def analytics_track(body: TrackBody, request: Request):
     """Public endpoint — the frontend calls this on landing/brochure view.
-    Unauthenticated but best-effort (no PII stored)."""
+    Unauthenticated but rate-limited (100/min/IP) to avoid funnel pollution."""
+    ip = _client_ip(request)
+    if not await _check_track_rate(ip):
+        raise HTTPException(status_code=429, detail="Too many tracking events")
     # Only accept known funnel events to avoid noise / abuse
     if body.event not in FUNNEL_STAGES:
         # Still accept but flag — can be tightened later
