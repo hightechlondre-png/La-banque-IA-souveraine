@@ -129,5 +129,67 @@ DB_NAME=aegis_q_core
 JWT_SECRET=aegis-q-sovereign-secret-CHANGE-IN-PROD-2026
 EMERGENT_LLM_KEY=sk-emergent-...
 CLAUDE_MODEL=claude-opus-4-5-20251101
+OPENROUTER_API_KEY=sk-or-v1-...
+OPENROUTER_SITE_URL=https://hybrid-federated-ia.preview.emergentagent.com
+OPENROUTER_SITE_NAME=AEGIS-Q
 CORS_ORIGINS=*
 ```
+
+---
+
+## 2026-04-20 — Phase 9 · La Ruche (Hybrid Federated AI Swarm) ✅
+
+### Philosophie utilisateur
+> « plus d'ia qui travaille moin de token a payer chaque ia et specialisé »
+> BEAUCOUP d'abeilles spécialisées, PEU de tokens par abeille. Chaque IA a un rôle cognitif distinct, routage intelligent via Qwen (superviseur) + Gemini Embedding (reine N-MEM-B).
+
+### 9 abeilles OpenRouter opérationnelles (probe 9/9 OK)
+| Role | Model | Tier | Budget tokens | Spécialité |
+|---|---|---|---|---|
+| grade_fou | `mistralai/mistral-large` | paid | 800 | Commandant stratégique — décisions haut niveau |
+| llm1 | `meta-llama/llama-4-maverick` | paid | 1000 | Audit smart-contracts & code — raisonnement technique |
+| llm2 | `deepseek/deepseek-r1` | paid | 900 | Raisonnement mathématique & finance — staking, APY, risk |
+| memoire1 | `google/gemma-4-31b-it` | paid | 600 | Mémoire contextuelle longue — condensation |
+| memoire2 | `minimax/minimax-m2.5:free` | free | 500 | Mémoire secondaire rapide — faible latence |
+| mem0_1 | `nvidia/nemotron-3-super-120b-a12b:free` | free | 700 | Orchestrateur d'agents — planification multi-étapes |
+| mem0_2 | `nvidia/nemotron-3-nano-30b-a3b:free` | free | 400 | Tests de compétences — QA rapide, classification |
+| superviseur | `qwen/qwen3-embedding-8b` | paid | — | Routeur sémantique (embeddings) |
+| reine | `google/gemini-embedding-2-preview` | paid | — | Reine N-MEM-B — mémoire long-terme fédérée |
+
+### Routage par usecase (primary → fallback chain)
+- `cognitive_chat` → grade_fou → mem0_1 → memoire2 → mem0_2 → llm2
+- `agent_orchestr` → mem0_1 → grade_fou → memoire2 → mem0_2
+- `staking_advisor` → llm2 → grade_fou → mem0_1 → memoire2
+- `contract_audit` → llm1 → grade_fou → llm2 → mem0_1
+- `skill_test` → mem0_2 → memoire2 → mem0_1 → grade_fou
+- `memory_condense` → memoire1 → memoire2 → mem0_1 → mem0_2
+
+### Nouveautés backend (`/app/backend/ruche.py`, `/app/backend/server.py`)
+- `call_bee(role, ...)` applique automatiquement le budget tokens du rôle si `max_tokens` non fourni (frugalité cognitive).
+- `call_bee` retry sur content vide × 2 budget (pour modèles reasoning DeepSeek R1 / Nemotron qui brûlent leur budget en raisonnement caché).
+- `probe_bee` tolérant : HTTP 200 = "ok" même si content vide (reasoning model reachable).
+- `get_credits()` expose solde OpenRouter (`{total, used, remaining}`).
+- `/api/ruche/status` enrichi : `specialty`, `budget`, `credits`, `usecases`.
+- `/api/ruche/test` permet de tester un usecase spécifique en live.
+- `llm_chat` / `fn_invoke_llm` acceptent un paramètre `usecase` qui cascade vers le router Ruche. Les endpoints ont été routés correctement :
+  - `/api/public/audit` → `contract_audit` (Llama 4 Maverick, spécialisé code Solidity).
+  - `/api/market/staking-advice` → `staking_advisor` (DeepSeek R1, reasoning finance).
+  - `fn_orchestrate_agent` → `agent_orchestr` (Nemotron Super 120B).
+  - `fn_test_skill` → `skill_test` (Nemotron Nano 30B).
+  - `fn_gemma_chat` → `cognitive_chat` (Mistral Large).
+
+### UI `/ruche` (RucheMonitor.jsx)
+- Header compteur `X/9 Abeilles Actives` + widget crédits `$9.45 / $30.00`.
+- Cartes abeilles : spécialité cognitive + budget tokens + statut coloré.
+- Section "Routage des cas d'usage" affichant primaire + fallbacks.
+- Bouton "Tester la ruche" live avec affichage bee_used + content.
+
+### Tests régressifs
+- Nouveau fichier `/app/backend/tests/test_ruche.py` : 11 tests GREEN.
+- Suite complète : **90/90 tests backend passent** (100%).
+- Fix résultant d'iteration 7 : `test_happy_path_shape` (public audit) désormais stable grâce au routage Llama 4 Maverick au lieu du généraliste Mistral.
+
+### Budget OpenRouter
+- Solde : **~$9.45 restants sur $30** après validation complète des 9 abeilles.
+- Fallback Claude Opus 4.5 conservé en cas d'épuisement ruche (via `emergentintegrations`).
+

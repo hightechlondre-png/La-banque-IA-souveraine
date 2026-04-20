@@ -273,6 +273,7 @@ async def staking_advice(
         session_id=f"advice-{user['id']}-{uuid.uuid4()}",
         system_prompt=system,
         messages=[{"role": "user", "content": prompt}],
+        usecase="staking_advisor",
     )
     return {
         "advice": advice,
@@ -597,6 +598,7 @@ async def fn_invoke_llm(body: Dict[str, Any], user: Dict[str, Any]) -> Dict[str,
         session_id=f"invoke-{user['id']}-{uuid.uuid4()}",
         system_prompt=system,
         messages=messages,
+        usecase=body.get("usecase") or "cognitive_chat",
     )
 
     if wants_json:
@@ -669,6 +671,7 @@ async def fn_orchestrate_agent(body: Dict[str, Any], user: Dict[str, Any]) -> Di
             session_id=f"agent-{agent_id}-{exec_id}",
             system_prompt=sys_prompt,
             messages=[{"role": "user", "content": prompt}],
+            usecase="agent_orchestr",
         )
     except Exception as e:  # pragma: no cover
         result = f"Erreur: {e}"
@@ -1018,6 +1021,7 @@ async def fn_test_skill(body: Dict[str, Any], user: Dict[str, Any]) -> Dict[str,
             session_id=f"skill-{skill_id}-{uuid.uuid4()}",
             system_prompt=system_prompt,
             messages=[{"role": "user", "content": test_input}],
+            usecase="skill_test",
         )
         ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
         tokens = int(len(test_input) / 4 + len(result) / 4)
@@ -1533,7 +1537,7 @@ async def public_audit(body: PublicAuditBody, request: Request):
 
     pseudo_user = {"id": f"public-{ip}"}
     result = await fn_invoke_llm(
-        {"prompt": prompt, "response_json_schema": {"type": "object"}},
+        {"prompt": prompt, "response_json_schema": {"type": "object"}, "usecase": "contract_audit"},
         pseudo_user,
     )
 
