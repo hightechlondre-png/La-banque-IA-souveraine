@@ -307,9 +307,12 @@ async def register(body: RegisterIn):
         "password_hash": pwd_ctx.hash(body.password),
         "created_at": now_iso(),
     }
+    uid = payload["sub"]
+    existing = await db.users.find_one({"id": uid})
     await db.users.insert_one(user_doc)
     public = {k: v for k, v in user_doc.items() if k != "password_hash"}
     public.pop("_id", None)
+    await _track("signup", user_id=uid, properties={"email": body.email.lower()})
     return {"access_token": make_token(uid), "user": public}
 
 
@@ -1179,6 +1182,11 @@ async def create_checkout_session(
         "updated_at": now_iso(),
     }
     await db.payment_transactions.insert_one(dict(tx))
+    await _track(
+        "checkout_initiated",
+        user_id=user["id"],
+        properties={"package_id": body.package_id, "amount": pkg["amount"]},
+    )
 
     return {"url": session.url, "session_id": session.session_id}
 
@@ -1256,6 +1264,15 @@ async def get_checkout_status(
                     "subscription_activated_at": now_iso(),
                     "subscription_session_id": session_id,
                 }
+            },
+        )
+        await _track(
+            "checkout_paid",
+            user_id=tx["user_id"],
+            properties={
+                "package_id": tx["package_id"],
+                "amount": tx["amount"],
+                "session_id": session_id,
             },
         )
         logger.info("Granted tier %s to user %s via session %s", tx["package_id"], tx["user_id"], session_id)
@@ -1480,6 +1497,19 @@ async def public_audit(body: PublicAuditBody, request: Request):
         "watermark": watermark,
     }
     await db.public_audits.insert_one(dict(doc))
+
+    # Funnel: record the audit run (distinct by IP + UA to approximate a visitor)
+    try:
+        ua = request.headers.get("user-agent", "")[:120]
+        sk = hashlib.sha256(f"{ip}|{ua}".encode()).hexdigest()[:16]
+        await _track(
+            "public_audit_run",
+            session_key=sk,
+            user_id=premium_user["id"] if premium_user else None,
+            properties={"score": score, "premium": bool(premium_user), "contract_name": body.name},
+        )
+    except Exception:
+        pass
 
     return {
         "audit_id": audit_id,
@@ -1798,6 +1828,138 @@ async def on_startup():
     await seed_data()
 
 
+
+
+
+
+# ---------------------------------------------------------------------------
+# Analytics — funnel tracking (server-authoritative events + frontend beacons)
+# ---------------------------------------------------------------------------
+FUNNEL_STAGES = [
+    "landing_view",        # visitor hits /
+    "public_audit_run",    # someone ran the free audit
+    "signup",              # account created
+    "brochure_view",       # authenticated user looked at pricing
+    "checkout_initiated",  # Stripe session created
+    "checkout_paid",       # payment confirmed (webhook OR polling)
+]
+
+
+async def _track(
+    event: str,
+    session_key: Optional[str] = None,
+    user_id: Optional[str] = None,
+    properties: Optional[Dict[str, Any]] = None,
+):
+    """Fire-and-forget event insertion. Safe to await."""
+    try:
+        await db.analytics_events.insert_one({
+            "id": str(uuid.uuid4()),
+            "event": event,
+            "session_key": session_key,
+            "user_id": user_id,
+            "properties": properties or {},
+            "created_at": now_iso(),
+        })
+    except Exception as e:
+        logger.warning("track event failed: %s", e)
+
+
+class TrackBody(BaseModel):
+    event: str = Field(min_length=1, max_length=80, pattern=r"^[a-z_]+$")
+    session_key: Optional[str] = Field(default=None, max_length=80)
+    properties: Optional[Dict[str, Any]] = None
+
+
+@api.post("/analytics/track")
+async def analytics_track(body: TrackBody, request: Request):
+    """Public endpoint — the frontend calls this on landing/brochure view.
+    Unauthenticated but best-effort (no PII stored)."""
+    # Only accept known funnel events to avoid noise / abuse
+    if body.event not in FUNNEL_STAGES:
+        # Still accept but flag — can be tightened later
+        pass
+    # Derive a session_key when none provided (from client IP prefix + UA hash)
+    sk = body.session_key
+    if not sk:
+        ip = _client_ip(request)
+        ua = request.headers.get("user-agent", "")[:120]
+        sk = hashlib.sha256(f"{ip}|{ua}".encode()).hexdigest()[:16]
+    # Attach optional Bearer user if present (no error on failure)
+    uid = None
+    auth_hdr = request.headers.get("authorization") or ""
+    if auth_hdr.lower().startswith("bearer "):
+        try:
+            payload = jwt.decode(auth_hdr.split(" ", 1)[1].strip(), JWT_SECRET, algorithms=[JWT_ALGO])
+            uid = payload.get("sub")
+        except Exception:
+            pass
+    await _track(body.event, session_key=sk, user_id=uid, properties=body.properties)
+    return {"ok": True, "session_key": sk}
+
+
+@api.get("/analytics/funnel")
+async def analytics_funnel(
+    days: int = 30,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Authenticated dashboard view — funnel counts over the last N days."""
+    since = (datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 365)))).isoformat()
+
+    # Count unique users / sessions per funnel stage
+    pipeline = [
+        {"$match": {"created_at": {"$gte": since}}},
+        {
+            "$group": {
+                "_id": "$event",
+                "count": {"$sum": 1},
+                "unique_users": {"$addToSet": "$user_id"},
+                "unique_sessions": {"$addToSet": "$session_key"},
+            }
+        },
+    ]
+    raw = {doc["_id"]: doc async for doc in db.analytics_events.aggregate(pipeline)}
+
+    stages = []
+    for stage in FUNNEL_STAGES:
+        doc = raw.get(stage, {"count": 0, "unique_users": [], "unique_sessions": []})
+        uniq_users = [u for u in doc.get("unique_users", []) if u]
+        uniq_sessions = [s for s in doc.get("unique_sessions", []) if s]
+        stages.append({
+            "stage": stage,
+            "count": int(doc.get("count", 0)),
+            "unique_users": len(uniq_users),
+            "unique_sessions": len(uniq_sessions),
+        })
+
+    # Compute conversion ratios between consecutive stages (vs first stage)
+    top = stages[0]["unique_sessions"] if stages[0]["unique_sessions"] else 0
+    for st in stages:
+        st["conversion_from_top_pct"] = (
+            round(100.0 * st["unique_sessions"] / top, 2) if top else 0
+        )
+
+    # Actual paid revenue proxy
+    paid_count = stages[-1]["count"]
+    revenue = await db.payment_transactions.aggregate([
+        {"$match": {"payment_status": "paid", "updated_at": {"$gte": since}}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
+    ]).to_list(1)
+    total_revenue = float(revenue[0]["total"]) if revenue else 0.0
+
+    return {
+        "since": since,
+        "days": days,
+        "stages": stages,
+        "paid_sessions": paid_count,
+        "estimated_revenue_usd": round(total_revenue, 2),
+    }
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    client.close()
+
+
 app.include_router(api)
 
 app.add_middleware(
@@ -1807,8 +1969,3 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()

@@ -1,4 +1,7 @@
 import { Link } from 'react-router-dom'
+import { useEffect } from 'react'
+import axios from 'axios'
+import { getToken } from '@/api/base44Client'
 import {
   Shield, ShieldCheck, Brain, Zap, Lock, Activity,
   ChevronRight, Sparkles, Code2, Hexagon, GitBranch, Github,
@@ -47,6 +50,23 @@ const METRICS = [
 ]
 
 export default function Landing() {
+  useEffect(() => {
+    const BACKEND =
+      import.meta.env.REACT_APP_BACKEND_URL ||
+      (typeof process !== 'undefined' && process.env?.REACT_APP_BACKEND_URL) ||
+      ''
+    axios
+      .post(
+        `${BACKEND}/api/analytics/track`,
+        { event: 'landing_view' },
+        {
+          headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+          timeout: 5000,
+        },
+      )
+      .catch(() => {})
+  }, [])
+
   return (
     <div
       data-testid="landing-page"

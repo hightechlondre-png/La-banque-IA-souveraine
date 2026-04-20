@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import { getToken } from "@/api/base44Client";
 import { toast } from "@/components/ui/use-toast";
@@ -154,6 +154,19 @@ const USECASES = [
 
 export default function SaasBrochure() {
   const [loadingPlan, setLoadingPlan] = useState(null);
+
+  useEffect(() => {
+    axios
+      .post(
+        `${BACKEND}/api/analytics/track`,
+        { event: 'brochure_view' },
+        {
+          headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+          timeout: 5000,
+        },
+      )
+      .catch(() => {});
+  }, []);
 
   const startCheckout = async (planId) => {
     if (planId === "enterprise") {

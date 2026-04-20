@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { BarChart2, TrendingUp, Activity, Layers, Loader2 } from "lucide-react";
+import FunnelWidget from "@/components/dashboard/FunnelWidget";
 import {
   LineChart, Line, BarChart, Bar,
   XAxis, YAxis, Tooltip, Legend,
@@ -123,6 +124,9 @@ export default function AnalyticsReports() {
           {rawRows.length} semaines · {rawRows[0]?.week} → {rawRows[rawRows.length-1]?.week}
         </Badge>
       </div>
+
+      {/* Funnel conversion (business KPIs) */}
+      <FunnelWidget />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
