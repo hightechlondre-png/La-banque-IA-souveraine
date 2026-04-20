@@ -70,6 +70,13 @@ Frontend uses a drop-in `@/api/base44Client` that mimics base44 SDK so all 50+ p
 - `checkPriceAlerts` now uses real AQ price (not hardcoded $2.15)
 - **28/28 backend tests PASS**
 
+### Phase 4 — AI Strategic Advisor
+- New endpoint `POST /api/market/staking-advice` combining real market data + Claude Opus 4.5 scenario analysis
+- Returns: `advice` (markdown), `computation` (APY effective, rewards AQ/USD, final USD), `market` context
+- New frontend component `StakingAdvisor.jsx` with on-demand « Demander l'IA » button and live computation strip
+- Integrated at the bottom of `Staking.jsx` — reacts to current simulator values (pool, amount, lock-up, multiplier)
+- Claude Opus delivers structured verdict: note /10, 3 forces, 2-3 risks, actionable recommendation, price alert thresholds
+
 ## Known MOCKED elements
 - Telegram notifications in checkPriceAlerts (stub — no real bot send)
 

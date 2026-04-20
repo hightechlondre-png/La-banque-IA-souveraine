@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
+import StakingAdvisor from "@/components/StakingAdvisor";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine
@@ -327,6 +328,15 @@ export default function Staking() {
           })}
         </div>
       </div>
+
+      {/* AI-powered strategic advisor (Claude Opus 4.5 + real market data) */}
+      <StakingAdvisor
+        amount={principal}
+        poolName={pool.name}
+        poolApy={pool.apy}
+        lockDays={lockup.days}
+        multiplier={lockup.mult}
+      />
     </div>
   );
 }

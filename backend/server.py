@@ -213,6 +213,76 @@ async def market_prices(user: Dict[str, Any] = Depends(get_current_user)):
     }
 
 
+class StakingAdviceBody(BaseModel):
+    amount_aq: float = Field(gt=0)
+    pool_name: str = Field(default="Gold")
+    pool_apy_pct: float = Field(gt=0, default=25)
+    lock_days: int = Field(gt=0, default=180)
+    multiplier: float = Field(gt=0, default=1.5)
+
+
+@api.post("/market/staking-advice")
+async def staking_advice(
+    body: StakingAdviceBody,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Combine real market data + Claude Opus 4.5 to analyze a staking scenario."""
+    aq = await _compute_aq_price()
+    coins = await _fetch_coingecko()
+
+    effective_apy = (body.pool_apy_pct * body.multiplier) / 100
+    daily_rate = effective_apy / 365
+    reward_aq = body.amount_aq * (((1 + daily_rate) ** body.lock_days) - 1)
+    reward_usd = reward_aq * aq["usd"]
+    principal_usd = body.amount_aq * aq["usd"]
+    final_usd = principal_usd + reward_usd
+
+    context = (
+        f"Scénario de staking AEGIS-Q:\n"
+        f"- Pool: {body.pool_name} (APY base {body.pool_apy_pct}%)\n"
+        f"- Multiplicateur lock-up: ×{body.multiplier} ({body.lock_days} jours)\n"
+        f"- APY effectif: {effective_apy*100:.2f}%\n"
+        f"- Montant staké: {body.amount_aq:,.0f} AQ ≈ ${principal_usd:,.2f} USD\n"
+        f"- Récompense estimée: {reward_aq:,.2f} AQ ≈ ${reward_usd:,.2f} USD\n"
+        f"- Valeur finale estimée: ${final_usd:,.2f} USD\n\n"
+        f"Contexte marché temps réel:\n"
+        f"- BTC: ${coins['BTC']['usd']:,} ({coins['BTC']['change24h']:+.2f}% 24h)\n"
+        f"- ETH: ${coins['ETH']['usd']:,} ({coins['ETH']['change24h']:+.2f}% 24h)\n"
+        f"- SOL: ${coins['SOL']['usd']:,} ({coins['SOL']['change24h']:+.2f}% 24h)\n"
+        f"- AQ synthétique: ${aq['usd']} ({aq['change24h']:+.2f}% 24h)\n"
+    )
+
+    system = (
+        "Tu es AEGIS-ADVISOR, conseiller IA stratégique en staking DeFi pour AEGIS-Q. "
+        "Tu réponds EXCLUSIVEMENT en français, en markdown structuré concis (max 300 mots). "
+        "Fournis: (1) Verdict synthétique en 1 phrase avec note /10, "
+        "(2) 3 forces, (3) 2-3 risques concrets, (4) 1 recommandation actionnable. "
+        "Tiens compte du contexte marché fourni. Sois direct et chiffré."
+    )
+    prompt = (
+        f"Analyse ce scénario de staking et donne ton verdict stratégique:\n\n{context}"
+    )
+    advice = await llm_chat(
+        session_id=f"advice-{user['id']}-{uuid.uuid4()}",
+        system_prompt=system,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return {
+        "advice": advice,
+        "computation": {
+            "effective_apy_pct": round(effective_apy * 100, 2),
+            "reward_aq": round(reward_aq, 2),
+            "reward_usd": round(reward_usd, 2),
+            "principal_usd": round(principal_usd, 2),
+            "final_usd": round(final_usd, 2),
+            "aq_price_usd": aq["usd"],
+            "aq_change24h": aq["change24h"],
+        },
+        "market": {"coins": coins, "aq": aq},
+        "generated_at": now_iso(),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
