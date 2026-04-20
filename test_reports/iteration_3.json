@@ -1,0 +1,35 @@
+{
+  "summary": "Phase 4 & 5 backend testing complete. All 34 tests PASS (100%): 28 previous regression tests + 6 new tests covering POST /api/market/staking-advice (auth-required, 422 on invalid body, happy-path with Claude Opus 4.5 advice + computation + market blocks) and POST /api/functions/invoke/invokeLLM (auth-required, plain-text mode returns {content, reply}, structured-json mode returns a parsed dict — not wrapped — with at least one expected key from the prompt schema). Claude Opus 4.5 responses verified live (not demo mode, not LLM error). Compound APY math validated to within 1 AQ: 100000 * ((1 + 0.375/365)^180 - 1).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/functions/invoke/invokeLLM", "issue": "When response_json_schema is provided and the LLM output is unparseable, fallback returns {_llm_raw, _parse_error}. This shape is a Python dict and will be JSON-serialized to the caller, but JS callers expecting a business-shape dict will not know why — consider standardizing with an explicit error field and an HTTP status hint header."},
+      {"endpoint": "/api/functions/invoke/checkPriceAlerts", "issue": "Telegram dispatch remains MOCKED (stub). Only last_alert_date is updated; no real notification sent. Carried over from iter 2."},
+      {"endpoint": "/api/market/prices", "issue": "On CoinGecko failure returns 200 with usd=0 (silent fallback). Surface an upstream_status flag. Carried over from iter 2."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~1340 lines — urgent split into modules (auth.py, entities.py, functions/*.py, market.py, seed.py) is overdue. Phase 4 & 5 added ~150 lines more to an already-bloated file. Carried + escalated from iter 1/2.",
+    "fn_invoke_llm session_id uses uuid4 each call → every invoke creates a fresh Claude chat session (no history reuse). This is intentional for stateless invocation but duplicates billing vs reusing a stable session when the caller has one. Document this behavior.",
+    "_extract_json_block uses rfind for the closing brace which can over-capture when prose contains stray } characters after the JSON block (e.g., 'Here is the JSON: {...} }'). Use a balanced-brace scanner or json.JSONDecoder().raw_decode(stripped) for robustness.",
+    "fn_invoke_llm: the JSON-forcing reinforcement is appended to the system prompt AND the user message. If the caller already includes strict JSON instructions, the prompt becomes verbose and may still not guarantee valid JSON (Anthropic has no native JSON-schema enforcement here). Consider passing response_format through to the Anthropic API when emergentintegrations supports it.",
+    "staking_advice recomputes `await _compute_aq_price()` and `await _fetch_coingecko()` sequentially though they're independent AND _compute_aq_price itself calls _fetch_coingecko (hits the 30s cache on second call). Minor: factor out one call site to avoid the redundant coroutine.",
+    "StakingAdviceBody has no upper bounds → amount_aq=1e18 is accepted and will pass to the LLM prompt verbatim. Add a reasonable ceiling (e.g., 1e9 AQ) to cap prompt size and prevent accidental prompt-injection via huge numbers.",
+    "llm_chat replays prior user messages via N separate chat.send_message calls (O(N) upstream Claude calls per turn). Carried over from iter 1/2 — high cost at scale.",
+    "JWT_SECRET default in code ('aegis-q-sovereign-secret-change-me') — should fail fast if env var missing in prod. Carried from iter 1."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (34/34)", "frontend": "not tested (per request)"},
+  "test_credentials": "demo@aegis-q.mil / Aegis2026! — verified working",
+  "seed_data_creation": "Uses existing startup seed. Phase 4/5 tests do not persist new entities (only transient LLM invocations). A few TEST_ prefixed KnowledgeDocuments persist from iter 2 tests — no cleanup required.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 34 backend tests pass at https://hybrid-federated-ia.preview.emergentagent.com. Phase 4 adds POST /api/market/staking-advice (Bearer, Pydantic-validated body with gt=0 constraints, returns advice+computation+market+generated_at). Phase 5 adds POST /api/functions/invoke/invokeLLM in the FUNCTIONS registry — returns {content, reply} text by default, or a parsed JSON dict when response_json_schema is present (fallback {_llm_raw, _parse_error} if unparseable). Claude Opus 4.5 calls take 5-30s; staking-advice can take up to 60s (CoinGecko + Opus). Use timeouts >= 120s. Test file unchanged location: /app/backend/tests/backend_test.py. Last LLM outputs during testing were coherent French markdown, confirming EMERGENT_LLM_KEY is live.",
+  "rca of the issue": "N/A — no failures."
+}

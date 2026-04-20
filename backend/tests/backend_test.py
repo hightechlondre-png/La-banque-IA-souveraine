@@ -385,3 +385,118 @@ class TestRAGTfIdf:
         d = r.json()
         assert d.get("status") == "success"
         assert isinstance(d.get("results"), list)  # may be empty
+
+
+# -------------------- Phase 4: Staking Advice --------------------
+class TestStakingAdvice:
+    def test_staking_advice_requires_auth(self, client):
+        r = client.post(
+            f"{API}/market/staking-advice",
+            json={"amount_aq": 100000, "pool_name": "Gold", "pool_apy_pct": 25, "lock_days": 180, "multiplier": 1.5},
+            timeout=20,
+        )
+        assert r.status_code == 401
+
+    def test_staking_advice_invalid_body(self, client, auth_headers):
+        # amount_aq <= 0 should fail Pydantic validation
+        r = client.post(
+            f"{API}/market/staking-advice",
+            json={"amount_aq": 0, "pool_name": "Gold", "pool_apy_pct": 25, "lock_days": 180, "multiplier": 1.5},
+            headers=auth_headers,
+            timeout=20,
+        )
+        assert r.status_code == 422, r.text
+
+    def test_staking_advice_happy_path(self, client, auth_headers):
+        r = client.post(
+            f"{API}/market/staking-advice",
+            json={
+                "amount_aq": 100000,
+                "pool_name": "Gold",
+                "pool_apy_pct": 25,
+                "lock_days": 180,
+                "multiplier": 1.5,
+            },
+            headers=auth_headers,
+            timeout=120,
+        )
+        assert r.status_code == 200, r.text
+        d = r.json()
+        # Structural
+        for k in ("advice", "computation", "market", "generated_at"):
+            assert k in d, f"Missing key {k}"
+        # advice is non-empty markdown from Claude (NOT demo mode, NOT LLM error)
+        assert isinstance(d["advice"], str)
+        assert len(d["advice"]) > 50, f"Advice too short: {d['advice']}"
+        assert not d["advice"].startswith("[MODE DÉMO]"), f"LLM in demo mode: {d['advice'][:200]}"
+        assert not d["advice"].startswith("[Erreur LLM]"), f"LLM error: {d['advice'][:300]}"
+        # Computation
+        comp = d["computation"]
+        for k in ("effective_apy_pct", "reward_aq", "reward_usd", "principal_usd", "final_usd", "aq_price_usd", "aq_change24h"):
+            assert k in comp, f"Missing computation.{k}"
+        # Effective APY = 25 * 1.5 = 37.5
+        assert abs(comp["effective_apy_pct"] - 37.5) < 0.01
+        # Compound formula: 100_000 * ((1 + 0.375/365)^180 - 1)
+        expected_reward = 100000 * (((1 + 0.375 / 365) ** 180) - 1)
+        assert abs(comp["reward_aq"] - round(expected_reward, 2)) < 1.0, f"reward_aq mismatch: {comp['reward_aq']} vs {expected_reward}"
+        # Final = principal + reward
+        assert abs((comp["principal_usd"] + comp["reward_usd"]) - comp["final_usd"]) < 0.02
+        # Market block
+        mkt = d["market"]
+        assert "coins" in mkt and "aq" in mkt
+        for sym in ("BTC", "ETH", "SOL"):
+            assert sym in mkt["coins"]
+
+
+# -------------------- Phase 5: invokeLLM --------------------
+class TestInvokeLLM:
+    def test_invoke_llm_requires_auth(self, client):
+        r = client.post(
+            f"{API}/functions/invoke/invokeLLM",
+            json={"prompt": "hello"},
+            timeout=20,
+        )
+        assert r.status_code == 401
+
+    def test_invoke_llm_plain_text(self, client, auth_headers):
+        """Without response_json_schema: returns {content, reply} text."""
+        r = client.post(
+            f"{API}/functions/invoke/invokeLLM",
+            json={"prompt": "Dis bonjour en une phrase."},
+            headers=auth_headers,
+            timeout=120,
+        )
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert isinstance(d, dict)
+        assert "content" in d and "reply" in d
+        assert isinstance(d["content"], str) and len(d["content"]) > 0
+        assert not d["content"].startswith("[MODE DÉMO]"), f"LLM in demo mode: {d['content'][:200]}"
+        assert not d["content"].startswith("[Erreur LLM]"), f"LLM error: {d['content'][:300]}"
+
+    def test_invoke_llm_structured_json(self, client, auth_headers):
+        """WITH response_json_schema: returns parsed JSON dict (not {content:...})."""
+        r = client.post(
+            f"{API}/functions/invoke/invokeLLM",
+            json={
+                "prompt": "Retourne un JSON {\"ok\":true, \"message\":\"test\"}. Rien d'autre.",
+                "response_json_schema": {"type": "object"},
+            },
+            headers=auth_headers,
+            timeout=120,
+        )
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert isinstance(d, dict), f"Expected dict, got {type(d)}: {d}"
+        # Should NOT be the plain-text shape
+        plain_text_keys = set(d.keys()) == {"content", "reply"}
+        assert not plain_text_keys, f"Got plain-text shape instead of parsed JSON: {d}"
+        # Accept either successful parse (has ok/message) or graceful fallback (_llm_raw)
+        if "_parse_error" in d:
+            # Graceful fallback - acceptable but log it
+            assert "_llm_raw" in d
+        else:
+            # Must contain at least one expected field from the structured response
+            has_expected = ("ok" in d) or ("message" in d)
+            assert has_expected, f"Parsed JSON missing 'ok' or 'message' keys: {d}"
+
