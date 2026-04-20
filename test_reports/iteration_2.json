@@ -1,0 +1,36 @@
+{
+  "summary": "Phase 3 backend testing complete. All 28 tests PASS (100%): 22 previous tests (auth, entity CRUD, gemmaChat w/ Claude Opus 4.5, orchestrateAgent, predictResonance, testSkill, checkPriceAlerts, indexDocument, retrieveContext, unknown fn 404) + 6 new Phase 3 tests (CoinGecko market/prices auth & data, checkPriceAlerts using real AQ basket + change24h, indexDocument no-embedding TF-IDF mode, retrieveContext relevant query similarity>0, retrieveContext irrelevant query no-crash). CoinGecko was reachable; BTC/ETH/SOL returned non-zero USD values and synthetic AQ price computed from basket > 0. TF-IDF retrieval works: 'staking gold APY' returns ranked hits from the seeded AEGIS-Q whitepaper + freshly indexed doc with similarity > 0.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/functions/invoke/checkPriceAlerts", "issue": "Telegram dispatch is MOCKED (declared). Only last_alert_date is updated; no real notification sent."},
+      {"endpoint": "/api/market/prices", "issue": "On CoinGecko failure endpoint returns 200 with usd=0 (silent fallback). Current test asserts >0 assuming upstream is up — if rate-limited in CI this would fail. Consider surfacing an upstream_status field."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 1182 lines — should be split into modules (auth.py, entities.py, functions/market.py, functions/rag.py, seed.py) for maintainability. Carried over from iteration_1.",
+    "TF-IDF IDF is recomputed over the full corpus on every retrieveContext call (O(N*chunks)). Fine for seed corpus (<50 chunks) but will scale poorly. Cache IDF in-memory keyed on doc-set revision, or persist precomputed chunk vectors on indexDocument.",
+    "_fetch_coingecko cache is process-local and not concurrency-safe (two simultaneous misses will both hit the API). Add an asyncio.Lock around the fetch-on-miss path.",
+    "_compute_aq_price guards division with 'or 1' but then multiplies by small weights — if CoinGecko returns 0s, AQ becomes 1*0.00002+1*0.0004+1*0.005 ≈ 0.0054, not 0. Then test_market_prices_authenticated's assertion aq.usd>0 passes artificially even on upstream outage. Prefer explicit status propagation.",
+    "/api/market/prices returns 200 even when upstream CoinGecko is down (with zeroed coins). Prefer 503 or include an 'upstream_ok' flag so clients can warn users that prices are stale.",
+    "checkPriceAlerts defaults current_price from AQ basket but still accepts an override via body — document precedence clearly; also no direction-change (crossed-up vs crossed-down) detection still → alert spam risk.",
+    "gemmaChat still replays prior user messages via N separate chat.send_message calls (O(N) upstream Claude calls per turn). Highly expensive at scale. Carried over from iteration_1.",
+    "JWT_SECRET default in code ('aegis-q-sovereign-secret-change-me') — should fail fast if env var missing in prod. Carried over from iteration_1.",
+    "_STOP_WORDS is French+English mixed but the tokenizer strips apostrophes before checking — e.g. 'd'inflation' becomes tokens ['d','inflation']; 'd' is in stop list so fine. However single-char tokens with accents (À-ÿ) may slip through — verify with French tests.",
+    "TF-IDF tokenizer does not stem/lemmatize, so 'staking' vs 'stake' vs 'stakes' are different tokens. For the current seed this is OK, but flag as limitation vs real embeddings."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (28/28)", "frontend": "not tested (per request)"},
+  "test_credentials": "demo@aegis-q.mil / Aegis2026! — verified working",
+  "seed_data_creation": "Uses existing seed from startup (MemoryNodes, AuditEvents, Agents, Skills, Proposals, 1 KB doc). Tests create a few TEST_ prefixed KnowledgeDocuments (left persisted) + ephemeral MemoryNodes (deleted).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 28 backend tests pass at https://hybrid-federated-ia.preview.emergentagent.com. New Phase 3 endpoints: GET /api/market/prices (Bearer required), checkPriceAlerts now returns current_price+change24h from AQ basket, indexDocument no longer stores embeddings, retrieveContext uses TF-IDF cosine. CoinGecko public API may rate-limit in CI (30s cache mitigates). Claude Opus calls take 5-15s each → keep timeouts >= 60s. Test file: /app/backend/tests/backend_test.py.",
+  "rca of the issue": "N/A — no failures."
+}

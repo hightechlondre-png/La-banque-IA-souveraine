@@ -6,6 +6,7 @@ import SupplyChart from "../components/dashboard/SupplyChart";
 import RecentTransactions from "../components/dashboard/RecentTransactions";
 import ArchitectureMap from "../components/dashboard/ArchitectureMap";
 import ResonanceChart from "../components/dashboard/ResonanceChart";
+import MarketPulse from "../components/dashboard/MarketPulse";
 
 export default function Dashboard() {
   return (
@@ -25,13 +26,15 @@ export default function Dashboard() {
       </div>
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <SupplyChart />
-        <TokenDistribution />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2">
+          <SupplyChart />
+        </div>
+        <MarketPulse />
       </div>
 
-      {/* Resonance Chart */}
-      <div className="grid grid-cols-1">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <TokenDistribution />
         <ResonanceChart />
       </div>
 

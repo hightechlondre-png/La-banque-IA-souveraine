@@ -22,6 +22,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 import jwt
+import httpx
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
 
@@ -137,6 +138,78 @@ async def root():
         "version": "1.0.0",
         "status": "operational",
         "model": CLAUDE_MODEL,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Market prices (CoinGecko)
+# ---------------------------------------------------------------------------
+_COIN_CACHE: Dict[str, Any] = {"ts": 0.0, "data": None}
+_COIN_CACHE_TTL = 30  # seconds
+
+
+async def _fetch_coingecko() -> Dict[str, Any]:
+    """Fetch BTC / ETH / SOL prices from CoinGecko (simple, no auth).
+    Returns a dict with {symbol: {usd, change24h}}.
+    """
+    import time
+
+    if _COIN_CACHE["data"] and (time.time() - _COIN_CACHE["ts"]) < _COIN_CACHE_TTL:
+        return _COIN_CACHE["data"]
+    url = (
+        "https://api.coingecko.com/api/v3/simple/price?"
+        "ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            raw = r.json()
+        data = {
+            "BTC": {"usd": raw["bitcoin"]["usd"], "change24h": raw["bitcoin"].get("usd_24h_change", 0)},
+            "ETH": {"usd": raw["ethereum"]["usd"], "change24h": raw["ethereum"].get("usd_24h_change", 0)},
+            "SOL": {"usd": raw["solana"]["usd"], "change24h": raw["solana"].get("usd_24h_change", 0)},
+        }
+        _COIN_CACHE["data"] = data
+        _COIN_CACHE["ts"] = time.time()
+        return data
+    except Exception as e:
+        logger.warning("CoinGecko fetch failed: %s", e)
+        # Fallback to cached or last-known values
+        return _COIN_CACHE["data"] or {
+            "BTC": {"usd": 0, "change24h": 0},
+            "ETH": {"usd": 0, "change24h": 0},
+            "SOL": {"usd": 0, "change24h": 0},
+        }
+
+
+async def _compute_aq_price() -> Dict[str, float]:
+    """AQ is an internal token: derive a synthetic price from a weighted basket
+    of BTC/ETH/SOL so the dashboard shows real-ish live movement.
+    """
+    coins = await _fetch_coingecko()
+    btc = coins["BTC"]["usd"] or 1
+    eth = coins["ETH"]["usd"] or 1
+    sol = coins["SOL"]["usd"] or 1
+    # Arbitrary basket (keeps AQ around ~$2-$5 range)
+    aq_usd = round(btc * 0.00002 + eth * 0.0004 + sol * 0.005, 4)
+    # 24h change = weighted mean of components
+    chg = (
+        0.5 * coins["BTC"]["change24h"]
+        + 0.3 * coins["ETH"]["change24h"]
+        + 0.2 * coins["SOL"]["change24h"]
+    )
+    return {"usd": aq_usd, "change24h": round(chg, 2)}
+
+
+@api.get("/market/prices")
+async def market_prices(user: Dict[str, Any] = Depends(get_current_user)):
+    coins = await _fetch_coingecko()
+    aq = await _compute_aq_price()
+    return {
+        "coins": coins,
+        "aq": aq,
+        "ts": now_iso(),
     }
 
 
@@ -600,31 +673,44 @@ async def fn_predict_resonance(body: Dict[str, Any], user: Dict[str, Any]) -> Di
 
 
 # ---------------------------------------------------------------------------
-# Function: retrieveContext (simple RAG)
+# Function: retrieveContext (TF-IDF based RAG)
 # ---------------------------------------------------------------------------
-def _simple_hash(s: str) -> int:
-    h = 0
-    for ch in s:
-        h = ((h << 5) - h) + ord(ch)
-        h = h & 0xFFFFFFFF
-    return abs(h)
+import re
+from collections import Counter
+
+_STOP_WORDS = {
+    "le","la","les","un","une","des","de","du","et","ou","a","à","au","aux","en","dans","pour",
+    "sur","par","avec","sans","ce","cet","cette","ces","il","elle","ils","elles","on","nous",
+    "vous","je","tu","qui","que","quoi","est","sont","ete","été","être","avoir","y","ne","pas",
+    "plus","moins","the","a","an","of","in","on","for","to","is","are","and","or","but","not",
+    "as","by","at","from","with","this","that","it","its","be","been","was","were","has","have",
+    "d","l","s","t","m","n","c","j","qu"
+}
 
 
-def _generate_embedding(text: str) -> List[float]:
-    tokens = text.lower().split()
-    emb = [0.0] * 128
-    for tok in tokens:
-        hv = _simple_hash(tok)
-        for j in range(128):
-            emb[j] += (hv ^ j) / 1000.0
-    norm = math.sqrt(sum(v * v for v in emb))
-    return [v / norm for v in emb] if norm > 0 else emb
+def _tokenize(text: str) -> List[str]:
+    # lowercase, keep letters/digits, split on non-word
+    tokens = re.findall(r"[A-Za-zÀ-ÿ0-9]+", (text or "").lower())
+    return [t for t in tokens if len(t) > 1 and t not in _STOP_WORDS]
 
 
-def _cosine(a: List[float], b: List[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    na = math.sqrt(sum(x * x for x in a))
-    nb = math.sqrt(sum(x * x for x in b))
+def _build_tfidf_vector(tokens: List[str], idf: Dict[str, float]) -> Dict[str, float]:
+    tf = Counter(tokens)
+    if not tf:
+        return {}
+    max_tf = max(tf.values())
+    return {t: (0.5 + 0.5 * (c / max_tf)) * idf.get(t, 0.0) for t, c in tf.items()}
+
+
+def _sparse_cosine(a: Dict[str, float], b: Dict[str, float]) -> float:
+    if not a or not b:
+        return 0.0
+    common = set(a) & set(b)
+    if not common:
+        return 0.0
+    dot = sum(a[t] * b[t] for t in common)
+    na = math.sqrt(sum(v * v for v in a.values()))
+    nb = math.sqrt(sum(v * v for v in b.values()))
     return dot / (na * nb) if na and nb else 0.0
 
 
@@ -634,21 +720,41 @@ async def fn_retrieve_context(body: Dict[str, Any], user: Dict[str, Any]) -> Dic
     if not query:
         raise HTTPException(status_code=400, detail="Query required")
 
-    docs = [d async for d in _collection("KnowledgeDocument").find({}, {"_id": 0}).limit(100)]
-    q_emb = _generate_embedding(query)
-    results = []
+    docs = [d async for d in _collection("KnowledgeDocument").find({}, {"_id": 0}).limit(200)]
+    # Collect all chunks across docs
+    all_chunks = []  # (doc, chunk_text)
     for doc in docs:
         for chunk in doc.get("content_chunks", []) or []:
-            if not chunk.get("embedding"):
-                continue
-            sim = _cosine(q_emb, chunk["embedding"])
-            results.append({
-                "text": chunk.get("text", ""),
-                "similarity": sim,
-                "document_title": doc.get("title", ""),
-                "document_id": doc.get("id"),
-                "source_type": doc.get("source_type", ""),
-            })
+            txt = chunk.get("text", "")
+            if txt:
+                all_chunks.append((doc, txt))
+    if not all_chunks:
+        return {"status": "success", "query": query, "results": [], "context": ""}
+
+    # Build IDF over the whole corpus at query time (small corpora are fine; cache if needed)
+    N = len(all_chunks)
+    df: Counter = Counter()
+    chunk_tokens = []
+    for _, txt in all_chunks:
+        toks = _tokenize(txt)
+        chunk_tokens.append(toks)
+        df.update(set(toks))
+    idf = {t: math.log((N + 1) / (c + 1)) + 1.0 for t, c in df.items()}
+
+    q_vec = _build_tfidf_vector(_tokenize(query), idf)
+    results = []
+    for (doc, txt), toks in zip(all_chunks, chunk_tokens):
+        c_vec = _build_tfidf_vector(toks, idf)
+        sim = _sparse_cosine(q_vec, c_vec)
+        if sim <= 0:
+            continue
+        results.append({
+            "text": txt,
+            "similarity": round(sim, 4),
+            "document_title": doc.get("title", ""),
+            "document_id": doc.get("id"),
+            "source_type": doc.get("source_type", ""),
+        })
     results.sort(key=lambda r: r["similarity"], reverse=True)
     top = results[:top_k]
     return {
@@ -682,8 +788,9 @@ async def fn_index_document(body: Dict[str, Any], user: Dict[str, Any]) -> Dict[
             chunks.append(piece)
         i += chunk_size - overlap
 
+    # Chunks no longer store embeddings (TF-IDF computed at query time).
     content_chunks = [
-        {"text": t, "embedding": _generate_embedding(t), "chunk_index": idx}
+        {"text": t, "chunk_index": idx}
         for idx, t in enumerate(chunks)
     ]
 
@@ -766,11 +873,19 @@ async def fn_test_skill(body: Dict[str, Any], user: Dict[str, Any]) -> Dict[str,
 # Function: checkPriceAlerts (telegram simulated)
 # ---------------------------------------------------------------------------
 async def fn_check_price_alerts(body: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
-    current_price = body.get("current_price", 2.15)
+    # Use real AQ synthetic price by default
+    aq = await _compute_aq_price()
+    current_price = body.get("current_price", aq["usd"])
     alerts_col = _collection("UserPriceAlert")
     alerts = [a async for a in alerts_col.find({"enabled": True}, {"_id": 0})]
     if not alerts:
-        return {"message": "No alerts configured", "checked": 0, "alerts_sent": 0, "current_price": current_price}
+        return {
+            "message": "No alerts configured",
+            "checked": 0,
+            "alerts_sent": 0,
+            "current_price": current_price,
+            "change24h": aq["change24h"],
+        }
 
     sent = 0
     for al in alerts:
@@ -789,6 +904,7 @@ async def fn_check_price_alerts(body: Dict[str, Any], user: Dict[str, Any]) -> D
         "checked": len(alerts),
         "alerts_sent": sent,
         "current_price": current_price,
+        "change24h": aq["change24h"],
     }
 
 
@@ -993,7 +1109,55 @@ async def seed_data():
     ]
     await db.monetary_proposals.insert_many([dict(p) for p in proposals])
 
-    logger.info("Seed done: %d nodes, %d events, %d agents, %d skills", len(nodes), len(events), len(agents), len(skill_docs))
+    # Seed a demo knowledge document so RAG has content out of the box.
+    aegis_kb = (
+        "AEGIS-Q est une plateforme bancaire IA souveraine de niveau militaire. "
+        "Le token natif AQ a un supply total de 100 millions, avec une politique "
+        "monétaire déflationniste pilotée par la DAO (taux d'inflation cible 1.2%, "
+        "burn rate sur chaque bridge cross-chain). Le staking AQ propose trois "
+        "tiers: Standard (×1), Premium (×1.5) et Gold (×2). Le Gold requiert un "
+        "lock de 12 mois minimum et offre un APY maximal de 18%. "
+        "La mémoire fractale N-MEM-B organise les connaissances en cinq niveaux "
+        "(L0 racine, L1 entités souveraines, L2 hubs de résonance, L3 factions, "
+        "L4 signaux) et cinq tiers (SEALED, DEEP, ACTIVE, SHORT_TERM, DORMANT). "
+        "La résonance d'un nœud mesure son activation courante entre 0 et 1. "
+        "Un pruning est déclenché automatiquement si la résonance dépasse 90%. "
+        "La sécurité est assurée par trois couches: audit IA des smart contracts "
+        "via Claude Opus, Zero-Knowledge Proofs (zk-SNARKs) pour les transactions "
+        "sensibles, et cryptographie post-quantique (Kyber / Dilithium) pour la "
+        "résistance aux attaques quantiques simulées par le module Quantum Attack Sim. "
+        "Le bridge cross-chain Lock & Mint relie Ethereum et Solana avec une latence "
+        "cible inférieure à 30 secondes et un mécanisme de fraud proofs. "
+        "La gouvernance DAO utilise un vote pondéré par montant AQ staké, avec un "
+        "quorum requis de 51% et un délai minimal de délibération de 72 heures. "
+        "Les agents autonomes (analyst, optimizer, monitor, executor, coordinator) "
+        "peuvent spawner d'autres agents jusqu'à une profondeur max configurable "
+        "pour éviter les boucles infinies. Chaque exécution est loggée dans "
+        "AgentExecution avec métriques tokens_used et execution_time_ms."
+    )
+    # Chunk it like indexDocument does
+    chunk_size, overlap = 500, 100
+    chunks = []
+    i = 0
+    while i < len(aegis_kb):
+        piece = aegis_kb[i : i + chunk_size]
+        if len(piece.strip()) > 50:
+            chunks.append(piece)
+        i += chunk_size - overlap
+    await db.knowledge_documents.insert_one({
+        "id": str(uuid.uuid4()),
+        "title": "AEGIS-Q Whitepaper — Synthèse v1",
+        "source_type": "text",
+        "content": aegis_kb,
+        "content_chunks": [{"text": t, "chunk_index": idx} for idx, t in enumerate(chunks)],
+        "metadata": {"author": "AEGIS Core", "version": "1.0"},
+        "indexed_at": now_iso(),
+        "is_indexed": True,
+        "chunk_count": len(chunks),
+        "created_at": now_iso(),
+    })
+
+    logger.info("Seed done: %d nodes, %d events, %d agents, %d skills, 1 KB doc", len(nodes), len(events), len(agents), len(skill_docs))
 
 
 @app.on_event("startup")

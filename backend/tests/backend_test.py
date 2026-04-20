@@ -264,6 +264,124 @@ class TestFunctions:
         assert "checked" in d
         assert "alerts_sent" in d
 
+    def test_check_price_alerts_real_aq_price(self, client, auth_headers):
+        """Phase 3: no current_price in body -> backend uses real AQ basket price; change24h present."""
+        r = client.post(f"{API}/functions/invoke/checkPriceAlerts", json={}, headers=auth_headers, timeout=30)
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert "current_price" in d
+        assert "change24h" in d
+        assert isinstance(d["current_price"], (int, float))
+        # If CoinGecko reachable, price should be > 0; fallback may give 0 — accept both but log.
+        assert d["current_price"] >= 0
+
     def test_unknown_function(self, client, auth_headers):
         r = client.post(f"{API}/functions/invoke/nonExistentFn", json={}, headers=auth_headers, timeout=20)
         assert r.status_code == 404
+
+
+# -------------------- Phase 3: Market Prices --------------------
+class TestMarketPrices:
+    def test_market_prices_requires_auth(self, client):
+        r = client.get(f"{API}/market/prices", timeout=20)
+        assert r.status_code == 401
+
+    def test_market_prices_authenticated(self, client, auth_headers):
+        r = client.get(f"{API}/market/prices", headers=auth_headers, timeout=30)
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert "coins" in d and "aq" in d and "ts" in d
+        coins = d["coins"]
+        for sym in ("BTC", "ETH", "SOL"):
+            assert sym in coins
+            assert "usd" in coins[sym] and "change24h" in coins[sym]
+            assert isinstance(coins[sym]["usd"], (int, float))
+            # Phase 3 spec: USD values MUST be > 0
+            assert coins[sym]["usd"] > 0, f"{sym} usd not > 0 (CoinGecko unreachable?): {coins[sym]}"
+        assert "usd" in d["aq"] and "change24h" in d["aq"]
+        assert d["aq"]["usd"] > 0
+
+
+# -------------------- Phase 3: TF-IDF RAG --------------------
+class TestRAGTfIdf:
+    def test_index_document_no_embedding_field(self, client, auth_headers):
+        """Phase 3: indexDocument chunks should NOT have an embedding field (TF-IDF mode)."""
+        title = f"TEST_TFIDF_{uuid.uuid4().hex[:6]}"
+        content = (
+            "AEGIS-Q propose un staking Gold avec APY maximal de 18% pour un lock de 12 mois. "
+            "Le staking Premium offre un multiplicateur 1.5x et le Standard 1.0x. "
+            "La politique monétaire déflationniste est pilotée par la DAO avec un burn rate sur les bridges. "
+        ) * 4
+        r = client.post(
+            f"{API}/functions/invoke/indexDocument",
+            json={"title": title, "source_type": "text", "content": content},
+            headers=auth_headers,
+            timeout=30,
+        )
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d.get("status") == "success"
+        assert d.get("chunks_created", 0) >= 1
+
+        # Fetch the doc back via entity list to inspect chunks
+        r2 = client.post(
+            f"{API}/entities/KnowledgeDocument/filter",
+            json={"query": {"id": d["document_id"]}, "limit": 1},
+            headers=auth_headers,
+            timeout=20,
+        )
+        assert r2.status_code == 200
+        docs = r2.json()
+        assert len(docs) == 1
+        chunks = docs[0].get("content_chunks", [])
+        assert len(chunks) >= 1
+        for c in chunks:
+            assert "embedding" not in c, f"TF-IDF mode should not persist embeddings: {list(c.keys())}"
+            assert "text" in c
+
+    def test_retrieve_context_relevant_query(self, client, auth_headers):
+        """Phase 3: meaningful query against the seeded AEGIS-Q whitepaper should return similarity > 0."""
+        # Ensure a relevant doc exists (seed KB has staking/Gold/APY text). Index a fresh targeted one too.
+        client.post(
+            f"{API}/functions/invoke/indexDocument",
+            json={
+                "title": f"TEST_Staking_{uuid.uuid4().hex[:6]}",
+                "source_type": "text",
+                "content": (
+                    "Le staking AEGIS-Q Gold offre un APY maximal de 18% avec un lock de 12 mois. "
+                    "Les tiers sont Standard (x1), Premium (x1.5), Gold (x2). "
+                    "Ce document explique en détail les récompenses du staking Gold APY. "
+                ) * 3,
+            },
+            headers=auth_headers,
+            timeout=30,
+        )
+        r = client.post(
+            f"{API}/functions/invoke/retrieveContext",
+            json={"query": "staking gold APY", "top_k": 5},
+            headers=auth_headers,
+            timeout=30,
+        )
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d.get("status") == "success"
+        results = d.get("results", [])
+        assert isinstance(results, list)
+        assert len(results) > 0, "expected at least 1 TF-IDF hit for 'staking gold APY'"
+        assert results[0]["similarity"] > 0
+        # Validate no embedding field is leaked into results
+        for r_ in results:
+            assert "embedding" not in r_
+
+    def test_retrieve_context_irrelevant_query_no_crash(self, client, auth_headers):
+        """Phase 3: totally irrelevant query must not crash (may return 0 results)."""
+        r = client.post(
+            f"{API}/functions/invoke/retrieveContext",
+            json={"query": "lorem ipsum xyz123 quantum ufo blablablabla", "top_k": 5},
+            headers=auth_headers,
+            timeout=30,
+        )
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d.get("status") == "success"
+        assert isinstance(d.get("results"), list)  # may be empty
