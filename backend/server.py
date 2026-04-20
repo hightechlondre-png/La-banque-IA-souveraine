@@ -1128,6 +1128,10 @@ async def create_checkout_session(
     pkg = PAYMENT_PACKAGES.get(body.package_id)
     if not pkg:
         raise HTTPException(status_code=400, detail="Package invalide")
+    if body.package_id == "enterprise":
+        raise HTTPException(status_code=400, detail="Contactez le service commercial pour l'offre Enterprise")
+    if not (body.origin_url.startswith("https://") or body.origin_url.startswith("http://")):
+        raise HTTPException(status_code=400, detail="origin_url doit commencer par http(s)://")
     if not STRIPE_API_KEY:
         raise HTTPException(status_code=503, detail="Stripe non configuré")
 
@@ -1211,7 +1215,20 @@ async def get_checkout_status(
     host_url = str(request.base_url).rstrip("/")
     webhook_url = f"{host_url}/api/webhook/stripe"
     stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-    status = await stripe_checkout.get_checkout_status(session_id)
+    try:
+        status = await stripe_checkout.get_checkout_status(session_id)
+    except Exception as e:
+        # Fallback: the proxied Stripe key may not retain sessions between create & retrieve.
+        # Return the DB-cached transaction so the frontend can still show 'pending'.
+        logger.warning("Stripe status fetch failed for %s: %s — returning cached DB row", session_id, e)
+        return {
+            "status": tx.get("status", "initiated"),
+            "payment_status": tx.get("payment_status", "pending"),
+            "amount_total": int(tx["amount"] * 100),
+            "currency": tx["currency"],
+            "metadata": tx.get("metadata", {}),
+            "_source": "db_cache",
+        }
 
     # Update DB once
     update = {
@@ -1272,7 +1289,12 @@ async def stripe_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Invalid webhook")
 
     if event.session_id:
-        await db.payment_transactions.update_one(
+        # Fetch the tx to know which user/package to grant
+        tx = await db.payment_transactions.find_one(
+            {"session_id": event.session_id}, {"_id": 0}
+        )
+        # Idempotent update of payment_transaction
+        result = await db.payment_transactions.update_one(
             {"session_id": event.session_id, "payment_status": {"$ne": "paid"}},
             {
                 "$set": {
@@ -1283,6 +1305,25 @@ async def stripe_webhook(request: Request):
                 }
             },
         )
+        # At-least-once tier grant on first transition to 'paid'
+        if (
+            event.payment_status == "paid"
+            and result.modified_count > 0
+            and tx
+            and tx.get("user_id")
+            and tx.get("package_id")
+        ):
+            await db.users.update_one(
+                {"id": tx["user_id"]},
+                {
+                    "$set": {
+                        "subscription_tier": tx["package_id"],
+                        "subscription_activated_at": now_iso(),
+                        "subscription_session_id": event.session_id,
+                    }
+                },
+            )
+            logger.info("[webhook] Granted tier %s to user %s", tx["package_id"], tx["user_id"])
     return {"ok": True}
 
     handler = FUNCTIONS.get(name)
