@@ -91,23 +91,44 @@ const makeEntityClient = (name) => ({
   async delete(id) {
     return http.delete(`/entities/${name}/${id}`).then(unwrap)
   },
-  // Simple polling-based subscribe (5s). Returns an unsubscribe fn.
+  // Polling-based subscribe that mimics base44 realtime event shape.
+  // Callback receives: { type: 'create' | 'update' | 'delete', data: <doc> }
   subscribe(callback, intervalMs = 5000) {
     if (typeof callback !== 'function') return () => {}
     let stopped = false
-    const fetchAndEmit = async () => {
+    let prev = new Map() // id -> doc
+
+    const fetchAndDiff = async () => {
       if (stopped) return
       try {
-        const data = await http
-          .get(`/entities/${name}/list`, { params: { limit: 100 } })
+        const docs = await http
+          .get(`/entities/${name}/list`, { params: { limit: 200 } })
           .then(unwrap)
-        if (!stopped) callback(data)
+        const next = new Map()
+        for (const d of docs || []) {
+          const key = d.id || d.node_id || d.event_id
+          if (!key) continue
+          next.set(key, d)
+          if (!prev.has(key)) {
+            // First load: still emit as 'create' so downstream charts get data
+            callback({ type: 'create', data: d })
+          } else {
+            const oldDoc = prev.get(key)
+            if (JSON.stringify(oldDoc) !== JSON.stringify(d)) {
+              callback({ type: 'update', data: d })
+            }
+          }
+        }
+        for (const [key, oldDoc] of prev.entries()) {
+          if (!next.has(key)) callback({ type: 'delete', data: oldDoc })
+        }
+        prev = next
       } catch (e) {
         // silent
       }
     }
-    fetchAndEmit()
-    const id = setInterval(fetchAndEmit, intervalMs)
+    fetchAndDiff()
+    const id = setInterval(fetchAndDiff, intervalMs)
     return () => {
       stopped = true
       clearInterval(id)
