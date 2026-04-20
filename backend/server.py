@@ -1126,11 +1126,11 @@ async def create_checkout_session(
     request: Request,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    if body.package_id == "enterprise":
+        raise HTTPException(status_code=400, detail="Contactez le service commercial pour l'offre Enterprise")
     pkg = PAYMENT_PACKAGES.get(body.package_id)
     if not pkg:
         raise HTTPException(status_code=400, detail="Package invalide")
-    if body.package_id == "enterprise":
-        raise HTTPException(status_code=400, detail="Contactez le service commercial pour l'offre Enterprise")
     if not (body.origin_url.startswith("https://") or body.origin_url.startswith("http://")):
         raise HTTPException(status_code=400, detail="origin_url doit commencer par http(s)://")
     if not STRIPE_API_KEY:
