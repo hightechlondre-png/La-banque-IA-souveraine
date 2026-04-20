@@ -1116,12 +1116,21 @@ async def ruche_status(user: Dict[str, Any] = Depends(get_current_user)):
             "label": meta.get("label"),
             "icon": meta.get("icon"),
             "model": meta.get("model"),
+            "specialty": meta.get("role"),
+            "budget": meta.get("budget"),
             "is_embedding": meta.get("embedding", False),
         })
+    # Récupère le solde OpenRouter (non bloquant)
+    credits = None
+    try:
+        credits = await _ruche.get_credits()
+    except Exception as e:
+        logger.warning("get_credits failed: %s", e)
     return {
         "enabled": True,
         "bees": enriched,
         "usecases": _ruche.USECASE_ROUTING,
+        "credits": credits,
         "ts": now_iso(),
     }
 

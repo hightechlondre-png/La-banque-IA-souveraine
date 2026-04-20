@@ -1,0 +1,62 @@
+{
+  "summary": "Iteration 7 — La Ruche (9 abeilles OpenRouter) backend testing. Created /app/backend/tests/test_ruche.py (11 tests, ALL GREEN) covering /api/ruche/status (enabled, 9 bees all status='ok', credits {total:30, used:20.27, remaining:9.73}, full metadata with role/status/tier/label/icon/model/specialty/budget/is_embedding, 7 routing usecases exposed including new 'memory_condense'), /api/ruche/test routing for the 4 requested usecases (cognitive_chat→grade_fou Mistral Large, contract_audit→llm1 Llama 4 Maverick, staking_advisor→llm2 DeepSeek R1, memory_condense→memoire1 Gemma 4 31B — all primaries reached on first attempt with non-empty content), /api/functions/invoke/gemmaChat via Ruche, /api/market/staking-advice (DeepSeek R1 path returns analysis). All 9 OpenRouter slugs validated: probe_bee returns 'ok' on HTTP 200 even when reasoning models emit empty visible content, as designed. Regression: 43/44 backend_test.py + 31/33 test_phase7_payments.py + 20/20 test_phase8_analytics.py = 94/97 (96.9%). The 3 failures are all the SAME root cause: /api/public/audit returns 502 'L\\'IA n\\'a pas produit un audit structuré.' because llm_chat now routes by default to usecase='cognitive_chat' → grade_fou (Mistral Large), and Mistral Large is INCONSISTENT at returning the strict {score_securite,vulnerabilites,...} JSON shape the audit endpoint requires (test_happy_path_shape passes ~50% of the time, deeper tests like test_different_ips_isolated and test_premium_user_watermark_and_flag fail). This is a regression vs iteration 6 where llm_chat went straight to Claude Opus 4.5. The fix is a one-liner in /api/public/audit (server.py:1535): pass usecase='contract_audit' through fn_invoke_llm → llm_chat so the audit hits Llama 4 Maverick (llm1, role 'Audit smart-contracts & code') instead of the generalist Mistral.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/public/audit",
+        "issue": "Returns 502 'L\\'IA n\\'a pas produit un audit structuré.' on ~50% of calls because llm_chat default usecase='cognitive_chat' routes to grade_fou (Mistral Large) which fails to emit valid {score_securite,...} JSON for many Solidity contracts. The Ruche has a bee specialized for this exact task (llm1 = Llama 4 Maverick, role='Audit smart-contracts & code — raisonnement technique') but it's not used. fn_invoke_llm has no parameter to forward a usecase to llm_chat, so the audit always hits cognitive_chat. Recommended fix: thread usecase through fn_invoke_llm and call it with usecase='contract_audit' from public_audit() at server.py:1535. Backend logs show many 'POST /api/public/audit HTTP/1.1 502 Bad Gateway' interleaved with 200s, confirming the flakiness is upstream-generation-quality, not network.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/ruche/status",
+        "issue": "swarm_status() probes all 9 bees concurrently via OpenRouter on EVERY call. With 9 paid models the call is slow (avg 60-90s) and burns credits proportionally to UI polling frequency. Consider caching the status for 30-60s in memory (the front-end /ruche-monitor view will likely poll). Also the embedding probes call embed('ping') every time — also non-trivial cost."
+      },
+      {
+        "endpoint": "POST /api/ruche/test",
+        "issue": "No usecase whitelist — any string body.usecase is accepted and falls back to 'generic'. Consider returning 400 for unknown usecases to make the front-end ruche-monitor surface routing-config drift."
+      },
+      {
+        "endpoint": "GET /api/ruche/status — credits reporting",
+        "issue": "Currently returns total/used/remaining as floats but no per-bee usage breakdown. Front-end will struggle to show 'which bee burned most credits'. OpenRouter exposes a generation-stats endpoint that could feed this; consider adding it later."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_ruche.py",
+    "/app/test_reports/pytest/iteration_7_ruche.xml",
+    "/app/test_reports/pytest/iteration_7_backend.xml",
+    "/app/test_reports/pytest/iteration_7_p78.xml"
+  ],
+  "action_items": [
+    "FIX (HIGH): Route /api/public/audit through usecase='contract_audit' so it hits llm1 (Llama 4 Maverick) instead of grade_fou (Mistral Large). Concretely: (1) add `usecase: str = 'cognitive_chat'` parameter to fn_invoke_llm in server.py:564 and forward it into llm_chat(...) at line 596; (2) at server.py:1535 call `await fn_invoke_llm({...}, pseudo_user, usecase='contract_audit')`. After this, test_different_ips_isolated, test_premium_user_watermark_and_flag, test_bearer_without_subscription_is_anonymous should all return to GREEN.",
+    "OPTIONAL (perf/cost): cache /api/ruche/status for 30-60s — a single /ruche-monitor page open will burn ~9 OpenRouter calls per refresh.",
+    "CARRY-OVER from iter 6 (still valid): server.py is now 2087 lines, split into auth.py / payments.py / public_audit.py / analytics.py / ruche_routes.py.",
+    "CARRY-OVER from iter 6: enterprise checkout returns 'Package invalide' instead of 'Contactez le service commercial' (server.py:1131-1135 ordering).",
+    "CARRY-OVER from iter 6: tier-granting logic in /payments/checkout/status is unreachable in test mode — duplicate it inside stripe_webhook handler.",
+    "CARRY-OVER from iter 6: _client_ip uses untrusted X-Forwarded-For — rate-limit bypass spoofable."
+  ],
+  "critical_code_review_comments": [
+    "ruche.py call_bee retry logic doubles max_tokens but reuses the SAME httpx client context — fine, but the empty-content retry is silent: no log line is emitted when the first attempt returned 200/empty. Add a logger.info('bee %s empty content, retrying with %d tokens', role, retry_payload['max_tokens']) so credit-burn from reasoning models is observable in /var/log/supervisor/backend.log.",
+    "ruche.py probe_bee considers HTTP 200 = ok even with empty content. Acceptable per the design note, BUT this masks the case where a bee is silently broken (e.g. mistral returns 200 with empty assistant message every single time). Consider running probe with max_tokens=512 once per startup and log a WARN if content-empty rate > 50% across N probes.",
+    "ruche.py BEES dict has hardcoded slugs — when an OpenRouter model is deprecated (very common, e.g. nemotron-3-* may rotate), the bee will silently start returning 404 'unavailable' from probe but tests will still be GREEN because all-bees-fail just falls through to Claude Opus. Add a startup self-check that fails-fast if >2 bees are unreachable.",
+    "server.py llm_chat (line 459) signature now takes a usecase but fn_invoke_llm (line 564) hardcodes nothing and passes no usecase, so EVERY non-gemmaChat function in the app — invokeLLM, public/audit, staking-advice path, etc. — silently uses 'cognitive_chat' (Mistral Large). The whole 'specialty per bee' philosophy is bypassed for every endpoint except gemmaChat. Need to thread usecase through fn_invoke_llm AND through every call site (public_audit → 'contract_audit', orchestrate_agent → 'agent_orchestr', test_skill → 'skill_test', etc.).",
+    "server.py /api/ruche/test accepts a free-text query but does not log / persist the usage, so cost attribution per usecase is invisible. Cheap win: write {usecase, bee_used, ts, content_len} to a ruche_usage collection.",
+    "ruche.py get_credits returns OpenRouter's raw 'total_credits' as an absolute number — but OpenRouter actually exposes 'data.total_credits' as the lifetime topup amount, not the current balance. The 'remaining = total - used' math therefore drifts as soon as the user tops up partially. Verify against the actual OpenRouter /credits response shape and/or use the dedicated /credits/limits endpoint."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ruche.py (NEW, 11 tests, all GREEN)"
+  ],
+  "success_rate": {
+    "backend": "94/97 = 96.9% (11/11 ruche + 43/44 backend_test + 31/33 phase7 + 20/20 phase8). The 3 failures are all the SAME public/audit-via-Mistral root cause.",
+    "frontend": "not tested (per request — backend only)"
+  },
+  "test_credentials": "demo@aegis-q.mil / Aegis2026! — login OK, subscription_tier='professional' (premium gating works).",
+  "seed_data_creation": "test_ruche.py creates no DB rows. Regression suite re-creates the usual ~30 analytics_events + 2 fresh user accounts + 2-3 payment_transactions + 1-2 public_audits as in iter 6. NOTE: each /api/ruche/status probe burns ~9 OpenRouter calls; the suite ran 3-4 status calls + 4 usecase tests + 1 staking-advice + many gemmaChat calls — total estimated burn this iteration ~$0.05 (remaining credits 9.73).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 4 explicit Ruche tests requested by user (status+9 bees ok, cognitive_chat→grade_fou, contract_audit→llm1, staking_advisor→llm2, memory_condense→memoire1) are GREEN. Ruche infrastructure is solid. The ONLY regression is /api/public/audit — Mistral Large can't reliably emit the structured {score_securite,vulnerabilites,...} JSON the endpoint requires. Once main agent threads usecase through fn_invoke_llm and routes public_audit to 'contract_audit' (Llama 4 Maverick), all 3 currently-failing tests should go green and we'll be back to 97/97. The Ruche fallback CHAIN itself was NOT directly tested under failure (we have no easy way to force a bee to fail mid-run); but call_usecase code path is exercised every test and the 'attempts' array always shows the primary succeeding. To force a fallback test in the future, temporarily mutate BEES['grade_fou']['model'] to a known-404 slug. MOCKED APIs as before: Telegram stubbed, Stripe retrieval falls back to db_cache. PYtest deselect flags to keep: --deselect 'backend/tests/backend_test.py::TestPublicAudit::test_rate_limit_serial_same_ip' -k 'not test_market_prices_authenticated'. Run command: cd /app && python -m pytest backend/tests/test_ruche.py backend/tests/backend_test.py backend/tests/test_phase7_payments.py backend/tests/test_phase8_analytics.py --deselect 'backend/tests/backend_test.py::TestPublicAudit::test_rate_limit_serial_same_ip' -k 'not test_market_prices_authenticated' -v",
+  "rca of the issue": "ROOT CAUSE: In iteration 6, llm_chat() called Claude Opus 4.5 directly via emergentintegrations. Iteration 7 inserted La Ruche as the primary path (server.py:459-476) with hardcoded usecase parameter defaulting to 'cognitive_chat', and added a fallback to Claude. fn_invoke_llm (line 564) does NOT accept or forward a usecase, so it always calls llm_chat() with the default 'cognitive_chat' → grade_fou (Mistral Large). /api/public/audit calls fn_invoke_llm at line 1535 to do contract analysis — therefore the audit endpoint now uses Mistral Large for what is fundamentally a contract-audit task. Mistral Large is a generalist model and its compliance with strict-JSON instructions for the audit schema is intermittent (~50% empirical failure rate observed in this run vs Claude Opus 4.5 in iter 6 which was near 100%). REPRODUCTION: curl -s -X POST $BASE/api/public/audit -H 'Content-Type: application/json' -d '{\"code\":\"contract A {function f() public {}}\",\"name\":\"A.sol\"}' — repeat 4-5 times, ~50% return 502. MITIGATION applied by tester: NONE (this is a routing decision, not a test-script issue). MITIGATION recommended for main agent: (1) add usecase param to fn_invoke_llm, (2) public_audit calls it with usecase='contract_audit', (3) THEN — and this is the deeper fix — every OTHER endpoint that calls fn_invoke_llm should also be audited and routed to its correct usecase to honor the 'specialty per bee' philosophy. The Ruche philosophy is currently DEFEATED for everything except gemmaChat."
+}

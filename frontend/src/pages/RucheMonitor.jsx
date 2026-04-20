@@ -28,6 +28,7 @@ const USECASES = [
   { key: 'staking_advisor', label: 'Staking Advisor' },
   { key: 'contract_audit',  label: 'Smart Contract Audit' },
   { key: 'skill_test',      label: 'Skill Tester' },
+  { key: 'memory_condense', label: 'Memory Condense' },
 ]
 
 export default function RucheMonitor() {
@@ -94,6 +95,13 @@ export default function RucheMonitor() {
           <p className="text-sm text-muted-foreground mt-1">
             9 abeilles spécialisées · Router Qwen · Reine Gemini · OpenRouter unique
           </p>
+          {data?.credits && (
+            <div data-testid="ruche-credits" className="inline-flex items-center gap-2 mt-2 px-2.5 py-1 rounded-full bg-primary/5 border border-primary/20 text-[11px] font-mono">
+              <span className="text-muted-foreground">OpenRouter</span>
+              <span className="text-primary font-bold">${data.credits.remaining.toFixed(4)}</span>
+              <span className="text-muted-foreground">/ ${data.credits.total.toFixed(2)}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
@@ -156,6 +164,16 @@ export default function RucheMonitor() {
                   </div>
                   <p className="text-sm font-semibold text-foreground truncate">{b.label}</p>
                   <p className="text-[10px] font-mono text-muted-foreground truncate mt-0.5">{b.model}</p>
+                  {b.specialty && (
+                    <p className="text-[11px] text-foreground/70 mt-1.5 leading-snug line-clamp-2" title={b.specialty}>
+                      {b.specialty}
+                    </p>
+                  )}
+                  {b.budget != null && (
+                    <p className="text-[9px] font-mono text-amber-400/80 mt-1 tracking-widest uppercase">
+                      Budget · {b.budget} tok
+                    </p>
+                  )}
                   <div className={cn('mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-semibold', st.bg)}>
                     <Icon className={cn('h-3 w-3', st.c)} />
                     <span className={st.c}>{st.label}</span>
