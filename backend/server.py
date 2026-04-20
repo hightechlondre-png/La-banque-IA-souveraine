@@ -1102,6 +1102,176 @@ async def invoke_function(
 
 
 # ---------------------------------------------------------------------------
+# Stripe payments (tiered SaaS subscriptions)
+# ---------------------------------------------------------------------------
+STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
+
+# Fixed server-side packages — NEVER trust prices from the frontend
+PAYMENT_PACKAGES = {
+    "starter": {"name": "Starter", "amount": 299.0, "currency": "usd"},
+    "professional": {"name": "Professional", "amount": 999.0, "currency": "usd"},
+    # "enterprise" is contact-sales, not a direct checkout
+}
+
+
+class CheckoutSessionBody(BaseModel):
+    package_id: str = Field(pattern=r"^[a-z_]+$")
+    origin_url: str = Field(min_length=10, max_length=500)
+
+
+@api.post("/payments/checkout/session")
+async def create_checkout_session(
+    body: CheckoutSessionBody,
+    request: Request,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    pkg = PAYMENT_PACKAGES.get(body.package_id)
+    if not pkg:
+        raise HTTPException(status_code=400, detail="Package invalide")
+    if not STRIPE_API_KEY:
+        raise HTTPException(status_code=503, detail="Stripe non configuré")
+
+    from emergentintegrations.payments.stripe.checkout import (
+        StripeCheckout, CheckoutSessionRequest,
+    )
+
+    origin = body.origin_url.rstrip("/")
+    host_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+
+    success_url = f"{origin}/payments/success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{origin}/brochure"
+    metadata = {
+        "user_id": user["id"],
+        "user_email": user.get("email", ""),
+        "package_id": body.package_id,
+        "source": "saas_brochure",
+    }
+
+    req = CheckoutSessionRequest(
+        amount=pkg["amount"],
+        currency=pkg["currency"],
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata=metadata,
+    )
+    session = await stripe_checkout.create_checkout_session(req)
+
+    # Persist a pending transaction BEFORE redirecting
+    tx = {
+        "id": str(uuid.uuid4()),
+        "session_id": session.session_id,
+        "user_id": user["id"],
+        "user_email": user.get("email"),
+        "package_id": body.package_id,
+        "package_name": pkg["name"],
+        "amount": pkg["amount"],
+        "currency": pkg["currency"],
+        "status": "initiated",
+        "payment_status": "pending",
+        "metadata": metadata,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    await db.payment_transactions.insert_one(dict(tx))
+
+    return {"url": session.url, "session_id": session.session_id}
+
+
+@api.get("/payments/checkout/status/{session_id}")
+async def get_checkout_status(
+    session_id: str,
+    request: Request,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    if not STRIPE_API_KEY:
+        raise HTTPException(status_code=503, detail="Stripe non configuré")
+    tx = await db.payment_transactions.find_one(
+        {"session_id": session_id}, {"_id": 0}
+    )
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction introuvable")
+    # Only the initiating user can poll its own status
+    if tx.get("user_id") and tx["user_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Accès refusé")
+
+    # If already completed, return cached status (idempotent; no double-credit)
+    if tx.get("payment_status") == "paid":
+        return {
+            "status": tx["status"],
+            "payment_status": "paid",
+            "amount_total": int(tx["amount"] * 100),
+            "currency": tx["currency"],
+            "metadata": tx.get("metadata", {}),
+        }
+
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout
+
+    host_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    status = await stripe_checkout.get_checkout_status(session_id)
+
+    # Update DB once
+    update = {
+        "status": status.status,
+        "payment_status": status.payment_status,
+        "updated_at": now_iso(),
+    }
+    await db.payment_transactions.update_one(
+        {"session_id": session_id, "payment_status": {"$ne": "paid"}},
+        {"$set": update},
+    )
+    return {
+        "status": status.status,
+        "payment_status": status.payment_status,
+        "amount_total": status.amount_total,
+        "currency": status.currency,
+        "metadata": status.metadata,
+    }
+
+
+@app.post("/api/webhook/stripe")
+async def stripe_webhook(request: Request):
+    if not STRIPE_API_KEY:
+        raise HTTPException(status_code=503, detail="Stripe non configuré")
+
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout
+
+    host_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+
+    body_bytes = await request.body()
+    sig = request.headers.get("Stripe-Signature", "")
+    try:
+        event = await stripe_checkout.handle_webhook(body_bytes, sig)
+    except Exception as e:
+        logger.warning("Stripe webhook verify failed: %s", e)
+        raise HTTPException(status_code=400, detail="Invalid webhook")
+
+    if event.session_id:
+        await db.payment_transactions.update_one(
+            {"session_id": event.session_id, "payment_status": {"$ne": "paid"}},
+            {
+                "$set": {
+                    "payment_status": event.payment_status or "unknown",
+                    "last_event": event.event_type,
+                    "last_event_id": event.event_id,
+                    "updated_at": now_iso(),
+                }
+            },
+        )
+    return {"ok": True}
+
+    handler = FUNCTIONS.get(name)
+    if not handler:
+        raise HTTPException(status_code=404, detail=f"Function '{name}' not found")
+    return await handler(body or {}, user)
+
+
+# ---------------------------------------------------------------------------
 # Public API — unauthenticated smart-contract audit + signed badge
 # ---------------------------------------------------------------------------
 _PUBLIC_IP_RATE: Dict[str, List[float]] = {}

@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import AppLayout from './components/layout/AppLayout';
 import Login from './pages/Login';
 import Landing from './pages/Landing';
+import PaymentSuccess from './pages/PaymentSuccess';
 import PublicAudit from './pages/PublicAudit';
 import Dashboard from './pages/Dashboard';
 import Tokenomics from './pages/Tokenomics';
@@ -90,6 +91,14 @@ const AuthenticatedApp = () => {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/public-audit" element={<PublicAudit />} />
+      <Route
+        path="/payments/success"
+        element={
+          <RequireAuth>
+            <PaymentSuccess />
+          </RequireAuth>
+        }
+      />
       <Route path="/" element={<RootRoute />} />
       <Route
         element={

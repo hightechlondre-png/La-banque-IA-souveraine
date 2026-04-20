@@ -1,9 +1,18 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useState } from "react";
+import axios from "axios";
+import { getToken } from "@/api/base44Client";
+import { toast } from "@/components/ui/use-toast";
 import {
   Brain, Shield, Cpu, BarChart2, Lock, Zap, Network, BookOpen,
-  CheckCircle, Globe, TrendingUp, Users, Star, ArrowRight, Hexagon
+  CheckCircle, Globe, TrendingUp, Users, Star, ArrowRight, Hexagon, Loader2,
 } from "lucide-react";
+
+const BACKEND =
+  import.meta.env.REACT_APP_BACKEND_URL ||
+  (typeof process !== "undefined" && process.env?.REACT_APP_BACKEND_URL) ||
+  "";
 
 const FEATURES = [
   {
@@ -70,6 +79,7 @@ const STATS = [
 
 const PLANS = [
   {
+    id: "starter",
     name: "Starter",
     price: "$299",
     period: "/mois",
@@ -84,6 +94,7 @@ const PLANS = [
     ],
   },
   {
+    id: "professional",
     name: "Professional",
     price: "$999",
     period: "/mois",
@@ -100,6 +111,7 @@ const PLANS = [
     ],
   },
   {
+    id: "enterprise",
     name: "Enterprise",
     price: "Sur devis",
     period: "",
@@ -141,6 +153,38 @@ const USECASES = [
 ];
 
 export default function SaasBrochure() {
+  const [loadingPlan, setLoadingPlan] = useState(null);
+
+  const startCheckout = async (planId) => {
+    if (planId === "enterprise") {
+      window.location.href = "mailto:contact@aegis-q.io?subject=Demande%20Enterprise%20AEGIS-Q";
+      return;
+    }
+    setLoadingPlan(planId);
+    try {
+      const res = await axios.post(
+        `${BACKEND}/api/payments/checkout/session`,
+        {
+          package_id: planId,
+          origin_url: window.location.origin,
+        },
+        { headers: { Authorization: `Bearer ${getToken()}` }, timeout: 30000 },
+      );
+      if (res.data?.url) {
+        window.location.href = res.data.url;
+      } else {
+        throw new Error("URL de checkout manquante");
+      }
+    } catch (e) {
+      toast({
+        title: "Paiement indisponible",
+        description: e?.response?.data?.detail || e?.message || "Erreur Stripe",
+        variant: "destructive",
+      });
+      setLoadingPlan(null);
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-16 pb-20">
 
@@ -333,11 +377,23 @@ export default function SaasBrochure() {
                 ))}
               </ul>
               <Button
+                data-testid={`saas-plan-${plan.id}-btn`}
+                onClick={() => startCheckout(plan.id)}
+                disabled={loadingPlan === plan.id}
                 className="w-full mt-5"
                 variant={plan.name === "Professional" ? "default" : "outline"}
               >
-                {plan.name === "Enterprise" ? "Contactez-nous" : "Démarrer"}
-                <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                {loadingPlan === plan.id ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                    Redirection…
+                  </>
+                ) : (
+                  <>
+                    {plan.name === "Enterprise" ? "Contactez-nous" : "Démarrer"}
+                    <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                  </>
+                )}
               </Button>
             </div>
           ))}
