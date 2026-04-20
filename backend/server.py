@@ -497,6 +497,94 @@ async def fn_gemma_chat(body: Dict[str, Any], user: Dict[str, Any]) -> Dict[str,
 
 
 # ---------------------------------------------------------------------------
+# Function: invokeLLM (generic LLM call, optional structured JSON output)
+# ---------------------------------------------------------------------------
+import json as _json_mod
+
+
+def _extract_json_block(text: str) -> Optional[Any]:
+    """Try to parse a JSON object/array from an LLM response.
+    Handles ```json fences, bare JSON, and leading/trailing prose.
+    """
+    if not text:
+        return None
+    # Strip markdown fences
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        # remove first fence line and any trailing fence
+        lines = stripped.splitlines()
+        lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        stripped = "\n".join(lines).strip()
+
+    # First: try direct parse
+    try:
+        return _json_mod.loads(stripped)
+    except Exception:
+        pass
+    # Second: find first { or [ and matching last } or ]
+    for open_ch, close_ch in (("{", "}"), ("[", "]")):
+        start = stripped.find(open_ch)
+        end = stripped.rfind(close_ch)
+        if start != -1 and end != -1 and end > start:
+            try:
+                return _json_mod.loads(stripped[start : end + 1])
+            except Exception:
+                continue
+    return None
+
+
+async def fn_invoke_llm(body: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
+    """Generic LLM invocation used by base44.integrations.Core.InvokeLLM shim.
+    - prompt: string (will be wrapped into a single user message if messages not provided)
+    - messages: optional list of {role, content}
+    - system_prompt: optional override
+    - response_json_schema: if present, LLM is instructed to return JSON and we parse it.
+    Returns either {content: str} or the parsed JSON object directly when schema requested.
+    """
+    prompt = body.get("prompt", "")
+    messages = body.get("messages")
+    system = body.get("system_prompt") or AEGIS_SYSTEM_PROMPT
+    wants_json = bool(body.get("response_json_schema"))
+
+    if not messages:
+        messages = [{"role": "user", "content": str(prompt)}]
+
+    if wants_json:
+        # Reinforce JSON-only output in the system prompt
+        system = (
+            (system or "") +
+            "\n\nIMPORTANT: Tu DOIS répondre EXCLUSIVEMENT avec un JSON valide, "
+            "sans texte avant ni après, sans balises markdown ``` ni commentaires."
+        )
+        # Append schema reminder to the user's last message
+        if messages and messages[-1].get("role") == "user":
+            messages = list(messages)
+            messages[-1] = {
+                **messages[-1],
+                "content": messages[-1]["content"]
+                + "\n\nRéponds UNIQUEMENT avec le JSON structuré demandé, sans ```.",
+            }
+
+    reply = await llm_chat(
+        session_id=f"invoke-{user['id']}-{uuid.uuid4()}",
+        system_prompt=system,
+        messages=messages,
+    )
+
+    if wants_json:
+        parsed = _extract_json_block(reply)
+        if parsed is not None:
+            # Return the parsed object directly so the JS caller can access fields.
+            return parsed
+        # Fallback: return an error-ish structure matching expected shape if possible
+        return {"_llm_raw": reply, "_parse_error": "Impossible de parser le JSON"}
+
+    return {"content": reply, "reply": reply}
+
+
+# ---------------------------------------------------------------------------
 # Function: orchestrateAgent
 # ---------------------------------------------------------------------------
 async def fn_orchestrate_agent(body: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
@@ -983,6 +1071,7 @@ async def fn_check_price_alerts(body: Dict[str, Any], user: Dict[str, Any]) -> D
 # ---------------------------------------------------------------------------
 FUNCTIONS = {
     "gemmaChat": fn_gemma_chat,
+    "invokeLLM": fn_invoke_llm,
     "orchestrateAgent": fn_orchestrate_agent,
     "predictResonance": fn_predict_resonance,
     "retrieveContext": fn_retrieve_context,

@@ -178,10 +178,32 @@ const functions = {
   },
 }
 
-// Integrations.Core shim — InvokeLLM routes to our gemmaChat, UploadFile returns a data URL.
+// Integrations.Core shim — InvokeLLM routes to our gemmaChat or invokeLLM (for structured JSON).
 const integrations = {
   Core: {
-    async InvokeLLM({ prompt, model, system_prompt, messages, add_context_from_internet } = {}) {
+    async InvokeLLM({
+      prompt,
+      model,
+      system_prompt,
+      messages,
+      response_json_schema,
+      add_context_from_internet,
+    } = {}) {
+      const payload = {
+        prompt,
+        model,
+        system_prompt,
+        messages,
+        response_json_schema,
+      }
+      // If the caller asks for structured JSON, use invokeLLM which returns parsed JSON.
+      if (response_json_schema) {
+        const res = await http
+          .post('/functions/invoke/invokeLLM', payload)
+          .then(unwrap)
+        return res
+      }
+      // Otherwise, route to gemmaChat (multi-turn friendly) and return the text.
       const msgs =
         Array.isArray(messages) && messages.length
           ? messages

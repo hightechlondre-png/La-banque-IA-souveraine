@@ -77,6 +77,12 @@ Frontend uses a drop-in `@/api/base44Client` that mimics base44 SDK so all 50+ p
 - Integrated at the bottom of `Staking.jsx` — reacts to current simulator values (pool, amount, lock-up, multiplier)
 - Claude Opus delivers structured verdict: note /10, 3 forces, 2-3 risks, actionable recommendation, price alert thresholds
 
+### Phase 5 — Structured JSON LLM + Live Smart Contract Audit
+- New backend function `invokeLLM` handler with `response_json_schema` support: the LLM is forced to return valid JSON, parsed server-side (fences + prose-tolerant extractor).
+- Frontend `integrations.Core.InvokeLLM` shim routes structured calls to `/api/functions/invoke/invokeLLM` (parsed JSON) and keeps chat calls on `gemmaChat`.
+- **AIAuditPage now works end-to-end**: paste Solidity, Claude Opus 4.5 returns {score_securite, vulnerabilites[], points_positifs[], resume, conforme_erc20, post_quantique}. PDF export ready.
+- Tested with VulnerableVault.sol → 15/100 score, 1 critical reentrancy + 1 high + 8 total findings, proper Checks-Effects-Interactions recommendation.
+
 ## Known MOCKED elements
 - Telegram notifications in checkPriceAlerts (stub — no real bot send)
 
