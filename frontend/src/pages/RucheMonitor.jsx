@@ -42,6 +42,10 @@ export default function RucheMonitor() {
   const [testResult, setTestResult] = useState(null)
   const [testLoading, setTestLoading] = useState(false)
 
+  const [autoQuery, setAutoQuery] = useState('Audit ce smart contract Solidity pour trouver des réentrances')
+  const [autoResult, setAutoResult] = useState(null)
+  const [autoLoading, setAutoLoading] = useState(false)
+
   const load = async () => {
     try {
       setErr(null)
@@ -72,6 +76,22 @@ export default function RucheMonitor() {
       setTestResult({ error: e?.message || 'Erreur' })
     } finally {
       setTestLoading(false)
+    }
+  }
+
+  const runAuto = async () => {
+    setAutoLoading(true); setAutoResult(null)
+    try {
+      const res = await axios.post(
+        `${BACKEND}/api/ruche/auto`,
+        { query: autoQuery },
+        { headers: { Authorization: `Bearer ${getToken()}` }, timeout: 120000 },
+      )
+      setAutoResult(res.data)
+    } catch (e) {
+      setAutoResult({ error: e?.response?.data?.detail || e?.message || 'Erreur' })
+    } finally {
+      setAutoLoading(false)
     }
   }
 
@@ -192,6 +212,81 @@ export default function RucheMonitor() {
           })}
         </div>
       )}
+
+      {/* Smart Auto Route — Qwen Superviseur */}
+      <div data-testid="ruche-auto-panel" className="bg-card border border-primary/30 rounded-xl p-5 relative overflow-hidden">
+        <div className="absolute -top-8 -right-8 w-40 h-40 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="flex items-start justify-between gap-3 flex-wrap relative">
+          <div>
+            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" /> Auto Route
+              <span className="text-[9px] font-mono text-primary bg-primary/10 border border-primary/30 rounded px-1.5 py-0.5 tracking-widest uppercase">Qwen Superviseur</span>
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5 max-w-xl">
+              Embeddings Qwen3 → cosine similarity → sélection dynamique de l'abeille optimale.
+              Zéro configuration, 1 seul embed par requête (frugalité).
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 relative">
+          <input
+            data-testid="ruche-auto-query-input"
+            type="text"
+            value={autoQuery}
+            onChange={(e) => setAutoQuery(e.target.value)}
+            placeholder="Décris ta tâche en langage naturel…"
+            className="h-10 px-3 rounded-lg bg-secondary border border-border text-sm text-foreground"
+          />
+          <Button
+            data-testid="ruche-auto-run-btn"
+            onClick={runAuto}
+            disabled={autoLoading || !autoQuery.trim()}
+            className="gap-1.5"
+          >
+            {autoLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+            {autoLoading ? 'Qwen route…' : 'Router automatiquement'}
+          </Button>
+        </div>
+
+        {autoResult && (
+          <div data-testid="ruche-auto-result" className="mt-4 bg-background/60 border border-border rounded-lg p-4 relative">
+            {autoResult.error ? (
+              <p className="text-sm text-destructive">Erreur : {autoResult.error}</p>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <span className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase">Abeille sélectionnée</span>
+                  <span className="text-sm font-semibold text-green-400">{autoResult.bee_label}</span>
+                  {autoResult.routing?.similarity != null && (
+                    <span className="text-[11px] font-mono text-primary bg-primary/10 border border-primary/30 rounded px-2 py-0.5">
+                      sim {autoResult.routing.similarity}
+                    </span>
+                  )}
+                </div>
+                {autoResult.routing?.top?.length > 0 && (
+                  <div className="mb-3 space-y-1">
+                    <p className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase mb-1">Top matches Qwen</p>
+                    {autoResult.routing.top.map((t, i) => (
+                      <div key={t.role} className="flex items-center gap-2 text-[11px]">
+                        <span className="font-mono w-4 text-muted-foreground">#{i + 1}</span>
+                        <span className="font-semibold text-foreground min-w-[140px] truncate">{t.label}</span>
+                        <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
+                          <div className="h-full bg-primary/60" style={{ width: `${Math.max(0, Math.min(100, t.similarity * 100))}%` }} />
+                        </div>
+                        <span className="font-mono text-muted-foreground tabular-nums">{t.similarity.toFixed(3)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed border-l-2 border-primary/30 pl-3">
+                  {autoResult.content}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Usecase routing */}
       <div className="bg-card border border-border rounded-xl p-5">

@@ -1,0 +1,52 @@
+{
+  "summary": "Phase 10 backend testing — Routage sémantique Qwen (superviseur) + Reine N-MEM-B (Gemini Embedding 2). Created /app/backend/tests/test_phase10_smart_route.py (15 tests, ALL GREEN, 50s). Validated: (a) /api/ruche/smart-route routes 'Audit ce smart contract Solidity pour trouver des réentrances' → llm1 (Llama 4 Maverick) with similarity ~0.7+ > 0.6, returns top[3] with role/label/specialty/similarity ✓; (b) 'Calcule mon APY de staking pour 10000 AQ' → llm2 (DeepSeek R1) ✓; (c) 'Résume cette longue documentation technique' → memoire1 (Gemma 4 31B) ✓; (d) 'Plan multi-étapes pour orchestrer 3 agents autonomes' → mem0_1 (Nemotron Super 120B) ✓; (e) smart-route empty body → 400 ✓; (f) /api/ruche/auto returns non-empty content + bee_used + routing.top + routing.similarity ✓; (g) /api/ruche/queen/remember inserts 3 souvenirs with Gemini embeddings (dim=3072 > 100) into db.queen_memory ✓; (h) /api/ruche/queen/recall returns results ordered by similarity desc with count >= 1 ✓; (i) remember/recall with empty body → 400 ✓; (j) Régression: /api/ruche/status returns 9/9 bees ok + credits object, /api/functions/invoke/gemmaChat returns content, /api/auth/login OK ✓. La 1ère requête smart-route prend ~3-5s (cache Qwen 7 embeds en série) puis instantané ensuite — comportement attendu confirmé.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/ruche/queen/remember",
+        "issue": "Aucun TTL ni cap sur db.queen_memory. La collection peut grossir indéfiniment et chaque /recall fait un full-scan (cosine en Python) — OK pour <10k souvenirs, mais à prévoir : index sur metadata.tag + pruning ou bascule vers Atlas Vector Search au-delà."
+      },
+      {
+        "endpoint": "POST /api/ruche/queen/recall",
+        "issue": "Pas de cap sur top_k côté serveur (int(body.get('top_k', 3))). Un client pourrait demander top_k=10000 et déclencher une réponse énorme. Cap recommandé à 50."
+      },
+      {
+        "endpoint": "POST /api/ruche/smart-route",
+        "issue": "Pas de cap sur top_k non plus (max = nb d'abeilles chat = 7 donc faible impact, mais bonne pratique)."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_phase10_smart_route.py",
+    "/app/test_reports/pytest/iteration_8_phase10.xml"
+  ],
+  "action_items": [
+    "Aucune action critique. Phase 10 entièrement fonctionnelle, 15/15 tests GREEN.",
+    "OPTIONNEL : ajouter un cap top_k <= 50 sur /queen/recall pour éviter abus.",
+    "OPTIONNEL : cleanup périodique de db.queen_memory (TTL ou cron) pour éviter croissance illimitée.",
+    "CARRY-OVER itération 7 (toujours valide) : action_items précédents restent applicables (caching ruche/status, threading usecase dans fn_invoke_llm pour les autres endpoints, splitting server.py 2087 lignes)."
+  ],
+  "critical_code_review_comments": [
+    "ruche.py _ensure_capability_vectors() utilise une boucle séquentielle (7 embeds en série, ~3-5s au premier appel). Pourrait être parallélisé avec asyncio.gather pour réduire à ~700ms — la frugalité (1 seul Qwen call par /smart-route runtime) est conservée car c'est uniquement le BOOTSTRAP qui est lent.",
+    "ruche.py queen_recall() fait full-scan + cosine en Python sur toute la collection à chaque requête. OK pour MVP mais à 10k+ souvenirs ça devient O(n*3072). Recommandation : créer un index MongoDB compound sur {queen:1, metadata.tag:1} pour réduire l'ensemble scanné, et envisager Atlas Vector Search à terme.",
+    "server.py /api/ruche/queen/remember stocke metadata['user_id'] mais /recall ne filtre PAS par user_id par défaut → tous les utilisateurs voient les souvenirs des autres. Probablement voulu (mémoire fédérée Reine), mais à confirmer ; sinon ajouter filter par user_id.",
+    "server.py /api/ruche/queen/recall : int(body.get('top_k', 3)) sans validation, et filter_tag accepte n'importe quoi (pas de regex/sanity). Faible risque (auth required) mais Pydantic body model serait plus robuste.",
+    "ruche.py smart_route() : si embed(query) lève une exception (Qwen down), aucune cascade fallback — l'endpoint retourne 500. Un fallback vers role='grade_fou' avec similarity=0.0 et reason='qwen_down' serait plus résilient (déjà fait pour _ensure_capability_vectors mais pas pour la query elle-même).",
+    "ruche.py call_auto() construit chain_seed à partir de top + bees gratuites en doublon ; logique correcte mais le contrôle de doublons (`if r not in chain_seed`) est O(n²) — anodin (7 abeilles) mais à noter."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase10_smart_route.py (NEW, 15 tests, ALL GREEN)"
+  ],
+  "success_rate": {
+    "backend": "15/15 = 100% (Phase 10). Régression rapide (3 tests critiques) GREEN. Suite complète non re-runnée pour économiser les crédits OpenRouter.",
+    "frontend": "non testé (backend only, conformément à la demande)"
+  },
+  "test_credentials": "demo@aegis-q.mil / Aegis2026! — login OK.",
+  "seed_data_creation": "Pendant les tests : 6 documents insérés dans db.queen_memory (3 contents x 2 fixtures call). CLEANUP EFFECTUÉ après les tests : delete_many({'metadata.tag': 'phase10_test'}) → 6 docs supprimés. Pas de pollution résiduelle.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 10 GREEN. Les 4 nouveaux endpoints /api/ruche/{smart-route, auto, queen/remember, queen/recall} fonctionnent comme spécifié. Routage sémantique Qwen extrêmement précis : les 4 queries de test sélectionnent exactement la bonne abeille (llm1, llm2, memoire1, mem0_1) avec similarity > 0.6 sur la première (audit Solidity). Cache _CAPABILITY_VECTORS opérationnel : 1er appel ~5s, suivants <500ms. Reine Gemini embedding 2 retourne bien des vecteurs dim=3072. Cleanup tag='phase10_test' déjà fait. Burn estimé cette itération : ~$0.03 (Qwen embeds + Gemini embeds + 1 auto-chat + 1 gemmaChat + ruche/status). Pour relancer : cd /app && python -m pytest backend/tests/test_phase10_smart_route.py -v. NB: reine memory n'a PAS de filter par user_id côté recall — les souvenirs sont fédérés/partagés, à confirmer si voulu.",
+  "rca of the issue": "N/A — aucun bug détecté, Phase 10 100% opérationnelle."
+}

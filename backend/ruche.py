@@ -197,3 +197,168 @@ async def get_credits() -> Dict[str, Any]:
     total = float(d.get("total_credits", 0))
     used = float(d.get("total_usage", 0))
     return {"total": total, "used": used, "remaining": round(total - used, 4)}
+
+
+# ---------------------------------------------------------------------------
+# 🎯 PHASE 10 — SUPERVISEUR QWEN (smart semantic routing)
+# ---------------------------------------------------------------------------
+# Pré-calcule 1 fois les embeddings Qwen des descriptions des 7 abeilles de chat
+# (les 2 embedding bees ne sont pas routables). Puis à chaque requête, 1 seul
+# embed Qwen sur la query + cosine similarity locale → sélection dynamique.
+# Coût : 1 seul appel Qwen par requête (frugalité).
+# ---------------------------------------------------------------------------
+
+_CAPABILITY_VECTORS: Dict[str, List[float]] = {}  # cache role → vector
+_CAPABILITY_LOCK = None  # lazy asyncio.Lock
+
+
+def _cosine(a: List[float], b: List[float]) -> float:
+    import math
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def _chat_bees() -> List[str]:
+    return [r for r, b in BEES.items() if not b.get("embedding")]
+
+
+async def _ensure_capability_vectors() -> Dict[str, List[float]]:
+    """Pré-calcule (1 fois) les embeddings Qwen de chaque spécialité d'abeille."""
+    global _CAPABILITY_LOCK, _CAPABILITY_VECTORS
+    if _CAPABILITY_VECTORS and len(_CAPABILITY_VECTORS) == len(_chat_bees()):
+        return _CAPABILITY_VECTORS
+    import asyncio as _a
+    if _CAPABILITY_LOCK is None:
+        _CAPABILITY_LOCK = _a.Lock()
+    async with _CAPABILITY_LOCK:
+        if _CAPABILITY_VECTORS and len(_CAPABILITY_VECTORS) == len(_chat_bees()):
+            return _CAPABILITY_VECTORS
+        vecs: Dict[str, List[float]] = {}
+        for role in _chat_bees():
+            desc = BEES[role].get("role", "") or BEES[role].get("label", role)
+            # Texte sémantique enrichi pour améliorer le routage
+            text = f"{BEES[role]['label']} — {desc}"
+            try:
+                vecs[role] = await embed(text, queen=False)
+            except Exception as e:
+                logger.warning("embed capability %s failed: %s", role, e)
+        _CAPABILITY_VECTORS = vecs
+        logger.info("[Ruche] Qwen capability vectors cached: %d bees", len(vecs))
+    return _CAPABILITY_VECTORS
+
+
+async def smart_route(query: str, top_k: int = 3) -> Dict[str, Any]:
+    """Routage sémantique dynamique via Qwen (superviseur).
+    Retourne la meilleure abeille + scores top-k pour transparence.
+    """
+    vecs = await _ensure_capability_vectors()
+    if not vecs:
+        return {"role": "grade_fou", "similarity": 0.0, "top": [], "reason": "fallback_no_vectors"}
+    q_vec = await embed(query, queen=False)
+    scored = [(role, _cosine(q_vec, vec)) for role, vec in vecs.items()]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    top = [
+        {"role": r, "label": BEES[r]["label"], "specialty": BEES[r].get("role", ""), "similarity": round(s, 4)}
+        for r, s in scored[:top_k]
+    ]
+    best_role, best_sim = scored[0]
+    return {
+        "role": best_role,
+        "label": BEES[best_role]["label"],
+        "specialty": BEES[best_role].get("role", ""),
+        "similarity": round(best_sim, 4),
+        "top": top,
+    }
+
+
+async def call_auto(
+    query: str,
+    system_prompt: Optional[str] = None,
+    max_tokens: Optional[int] = None,
+    temperature: float = 0.7,
+) -> Dict[str, Any]:
+    """Chat auto-routé : Qwen sélectionne la meilleure abeille puis fallback cascade."""
+    route = await smart_route(query)
+    primary = route["role"]
+    # Construit une cascade de fallback en prenant les top-3 sémantiques + les gratuites
+    chain_seed: List[str] = [primary] + [t["role"] for t in route["top"] if t["role"] != primary]
+    # Ajoute les abeilles gratuites restantes pour robustesse
+    for r in _chat_bees():
+        if r not in chain_seed:
+            chain_seed.append(r)
+    tried: List[Dict[str, str]] = []
+    for role in chain_seed:
+        try:
+            content = await call_bee(role, [{"role": "user", "content": query}], system_prompt=system_prompt, max_tokens=max_tokens, temperature=temperature)
+            return {
+                "content": content,
+                "bee_used": role,
+                "bee_label": BEES[role]["label"],
+                "bee_role": BEES[role].get("role", ""),
+                "routing": route,
+                "attempts": tried + [{"role": role, "status": "ok"}],
+            }
+        except Exception as e:
+            tried.append({"role": role, "status": "error", "reason": str(e)[:150]})
+            continue
+    return {"content": None, "bee_used": None, "routing": route, "attempts": tried, "error": "all_bees_failed"}
+
+
+# ---------------------------------------------------------------------------
+# 👑 PHASE 10 — REINE GEMINI (N-MEM-B long-term memory)
+# ---------------------------------------------------------------------------
+# Mémoire fédérée long-terme : embed via Gemini, stockage MongoDB, recall cosine.
+# Usage : avant une requête complexe, recall top-k memories pour enrichir contexte.
+# ---------------------------------------------------------------------------
+
+async def queen_remember(
+    db_coll,
+    content: str,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Stocke un souvenir dans N-MEM-B avec embedding Gemini Queen."""
+    import uuid as _u
+    from datetime import datetime as _dt, timezone as _tz
+    vec = await embed(content, queen=True)
+    doc = {
+        "id": str(_u.uuid4()),
+        "content": content,
+        "vector": vec,
+        "metadata": metadata or {},
+        "created_at": _dt.now(_tz.utc).isoformat(),
+        "queen": True,
+    }
+    await db_coll.insert_one(dict(doc))
+    return {"id": doc["id"], "dim": len(vec), "created_at": doc["created_at"]}
+
+
+async def queen_recall(
+    db_coll,
+    query: str,
+    top_k: int = 3,
+    filter_tag: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Recall top-k souvenirs via cosine similarity sur les embeddings Gemini."""
+    q_vec = await embed(query, queen=True)
+    mongo_filter: Dict[str, Any] = {"queen": True, "vector": {"$exists": True}}
+    if filter_tag:
+        mongo_filter["metadata.tag"] = filter_tag
+    # Stream matching docs; cosine in Python (frugalité — pas d'Atlas vector search requis)
+    cursor = db_coll.find(mongo_filter, {"_id": 0, "vector": 1, "content": 1, "metadata": 1, "created_at": 1, "id": 1})
+    scored: List[Dict[str, Any]] = []
+    async for d in cursor:
+        v = d.get("vector") or []
+        if not v:
+            continue
+        sim = _cosine(q_vec, v)
+        scored.append({
+            "id": d.get("id"),
+            "content": d.get("content"),
+            "metadata": d.get("metadata") or {},
+            "created_at": d.get("created_at"),
+            "similarity": round(sim, 4),
+        })
+    scored.sort(key=lambda x: x["similarity"], reverse=True)
+    return scored[:top_k]

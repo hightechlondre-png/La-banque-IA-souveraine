@@ -1156,6 +1156,70 @@ async def ruche_test_usecase(
     )
     return result
 
+
+# --- Phase 10: Superviseur Qwen — Smart semantic routing --------------------
+
+@api.post("/ruche/smart-route")
+async def ruche_smart_route(
+    body: Dict[str, Any],
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Qwen superviseur : sélection sémantique de la meilleure abeille pour une query."""
+    import ruche as _ruche
+    query = (body.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="query required")
+    top_k = int(body.get("top_k", 3))
+    return await _ruche.smart_route(query, top_k=top_k)
+
+
+@api.post("/ruche/auto")
+async def ruche_auto(
+    body: Dict[str, Any],
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Chat auto-routé : Qwen choisit l'abeille, puis cascade de fallback."""
+    import ruche as _ruche
+    query = (body.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="query required")
+    system = body.get("system_prompt") or "Réponds en français, brièvement et précisément."
+    max_tokens = body.get("max_tokens")
+    return await _ruche.call_auto(query=query, system_prompt=system, max_tokens=max_tokens)
+
+
+# --- Phase 10: Reine Gemini — N-MEM-B long-term memory ----------------------
+
+@api.post("/ruche/queen/remember")
+async def ruche_queen_remember(
+    body: Dict[str, Any],
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Stocke un souvenir dans la mémoire N-MEM-B (embedding Gemini Queen)."""
+    import ruche as _ruche
+    content = (body.get("content") or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="content required")
+    metadata = body.get("metadata") or {}
+    metadata["user_id"] = user["id"]
+    return await _ruche.queen_remember(db.queen_memory, content, metadata)
+
+
+@api.post("/ruche/queen/recall")
+async def ruche_queen_recall(
+    body: Dict[str, Any],
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Recall top-k souvenirs similaires (cosine Gemini Queen)."""
+    import ruche as _ruche
+    query = (body.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="query required")
+    top_k = int(body.get("top_k", 3))
+    filter_tag = body.get("filter_tag")
+    results = await _ruche.queen_recall(db.queen_memory, query, top_k=top_k, filter_tag=filter_tag)
+    return {"query": query, "results": results, "count": len(results)}
+
 FUNCTIONS = {
     "gemmaChat": fn_gemma_chat,
     "invokeLLM": fn_invoke_llm,
