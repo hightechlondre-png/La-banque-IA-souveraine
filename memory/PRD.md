@@ -190,6 +190,50 @@ CORS_ORIGINS=*
 - Fix résultant d'iteration 7 : `test_happy_path_shape` (public audit) désormais stable grâce au routage Llama 4 Maverick au lieu du généraliste Mistral.
 
 ### Budget OpenRouter
-- Solde : **~$9.45 restants sur $30** après validation complète des 9 abeilles.
+- Solde : **~$9.44 restants sur $30** après validation complète des 9 abeilles + Phase 10.
 - Fallback Claude Opus 4.5 conservé en cas d'épuisement ruche (via `emergentintegrations`).
+
+---
+
+## 2026-04-21 — Phase 10 · Intelligence de Routage (Qwen + Queen) ✅
+
+### Superviseur Qwen — Routage sémantique dynamique
+- **Pré-calcul** : 7 embeddings Qwen3-8B des spécialités des abeilles chat, cachés en RAM (module-level dict + asyncio.Lock), **parallélisés** via `asyncio.gather` (~700ms au bootstrap).
+- **Runtime frugal** : 1 seul embed Qwen par requête + cosine similarity locale → sélection dynamique de l'abeille optimale.
+- **Résilience** : si Qwen down, fallback automatique vers `grade_fou` avec `reason='qwen_down'`.
+- **Validation sémantique** (test dédié `test_phase10_smart_route.py`) :
+  - "Audit Solidity réentrance" → **Llama 4 Maverick** (sim 0.79)
+  - "Calcule APY staking" → **DeepSeek R1** (sim 0.75)
+  - "Résume documentation" → **Gemma 4 31B** (sim 0.67)
+  - "Orchestrer 3 agents" → **Nemotron Super 120B** (sim 0.84)
+
+### Reine Gemini — N-MEM-B (mémoire long-terme fédérée)
+- `queen_remember(content, metadata)` → embedding Gemini Embedding 2 (dim 3072) stocké dans `db.queen_memory`.
+- `queen_recall(query, top_k, filter_tag)` → cosine similarity sur toute la collection, tri descendant.
+- Cap `top_k <= 50` côté serveur (anti-abus).
+
+### Nouveaux endpoints
+- `POST /api/ruche/smart-route` `{query, top_k?}` → `{role, label, specialty, similarity, top[]}`
+- `POST /api/ruche/auto` `{query, system_prompt?, max_tokens?}` → chat auto-routé avec cascade sémantique
+- `POST /api/ruche/queen/remember` `{content, metadata?}` → stockage N-MEM-B
+- `POST /api/ruche/queen/recall` `{query, top_k?, filter_tag?}` → rappel cosine
+
+### UI `/ruche` enrichie
+- Nouveau panneau "Auto Route · Qwen Superviseur" avec :
+  - Input query libre
+  - Bouton "Router automatiquement"
+  - Badge abeille sélectionnée + score similarity
+  - Barres de progression visuelles pour le top-3 Qwen
+  - Affichage du contenu renvoyé par l'abeille sélectionnée
+- `data-testid` : `ruche-auto-panel`, `ruche-auto-query-input`, `ruche-auto-run-btn`, `ruche-auto-result`
+
+### Tests régressifs
+- Nouveau fichier `/app/backend/tests/test_phase10_smart_route.py` : **15 tests GREEN** (50s).
+- Régression : `/api/ruche/status`, `/api/functions/invoke/gemmaChat`, `/api/auth/login` OK.
+- Cleanup `db.queen_memory` après tests (delete_many metadata.tag='phase10_test').
+
+### Carry-over backlog
+- Index MongoDB sur `{queen:1, metadata.tag:1}` si mémoire > 10k docs (ou bascule Atlas Vector Search).
+- Filter par `user_id` sur `queen_recall` si on veut cloisonner la mémoire par user (actuellement fédérée globale — design choice).
+- Pydantic body models pour endpoints ruche (actuellement dict libre avec validations manuelles).
 

@@ -235,28 +235,42 @@ async def _ensure_capability_vectors() -> Dict[str, List[float]]:
     async with _CAPABILITY_LOCK:
         if _CAPABILITY_VECTORS and len(_CAPABILITY_VECTORS) == len(_chat_bees()):
             return _CAPABILITY_VECTORS
+        roles = _chat_bees()
+        texts = [f"{BEES[r]['label']} — {BEES[r].get('role', '') or BEES[r].get('label', r)}" for r in roles]
+        # Parallèle : 7 embeds concurrents en ~700ms vs ~4s séquentiel
+        results = await _a.gather(
+            *(embed(t, queen=False) for t in texts),
+            return_exceptions=True,
+        )
         vecs: Dict[str, List[float]] = {}
-        for role in _chat_bees():
-            desc = BEES[role].get("role", "") or BEES[role].get("label", role)
-            # Texte sémantique enrichi pour améliorer le routage
-            text = f"{BEES[role]['label']} — {desc}"
-            try:
-                vecs[role] = await embed(text, queen=False)
-            except Exception as e:
-                logger.warning("embed capability %s failed: %s", role, e)
+        for role, res in zip(roles, results):
+            if isinstance(res, Exception):
+                logger.warning("embed capability %s failed: %s", role, res)
+                continue
+            vecs[role] = res
         _CAPABILITY_VECTORS = vecs
-        logger.info("[Ruche] Qwen capability vectors cached: %d bees", len(vecs))
+        logger.info("[Ruche] Qwen capability vectors cached: %d/%d bees", len(vecs), len(roles))
     return _CAPABILITY_VECTORS
 
 
 async def smart_route(query: str, top_k: int = 3) -> Dict[str, Any]:
     """Routage sémantique dynamique via Qwen (superviseur).
     Retourne la meilleure abeille + scores top-k pour transparence.
+    Résilient : si Qwen down, fallback vers 'grade_fou' avec similarity=0.
     """
-    vecs = await _ensure_capability_vectors()
+    top_k = max(1, min(int(top_k or 3), 7))  # cap raisonnable
+    try:
+        vecs = await _ensure_capability_vectors()
+    except Exception as e:
+        logger.warning("capability vectors unavailable: %s", e)
+        vecs = {}
     if not vecs:
-        return {"role": "grade_fou", "similarity": 0.0, "top": [], "reason": "fallback_no_vectors"}
-    q_vec = await embed(query, queen=False)
+        return {"role": "grade_fou", "label": BEES["grade_fou"]["label"], "specialty": BEES["grade_fou"].get("role", ""), "similarity": 0.0, "top": [], "reason": "qwen_unavailable"}
+    try:
+        q_vec = await embed(query, queen=False)
+    except Exception as e:
+        logger.warning("embed query failed (Qwen down?): %s", e)
+        return {"role": "grade_fou", "label": BEES["grade_fou"]["label"], "specialty": BEES["grade_fou"].get("role", ""), "similarity": 0.0, "top": [], "reason": "qwen_down"}
     scored = [(role, _cosine(q_vec, vec)) for role, vec in vecs.items()]
     scored.sort(key=lambda x: x[1], reverse=True)
     top = [

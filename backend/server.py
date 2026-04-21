@@ -1215,7 +1215,7 @@ async def ruche_queen_recall(
     query = (body.get("query") or "").strip()
     if not query:
         raise HTTPException(status_code=400, detail="query required")
-    top_k = int(body.get("top_k", 3))
+    top_k = max(1, min(int(body.get("top_k", 3)), 50))  # cap anti-abus
     filter_tag = body.get("filter_tag")
     results = await _ruche.queen_recall(db.queen_memory, query, top_k=top_k, filter_tag=filter_tag)
     return {"query": query, "results": results, "count": len(results)}
