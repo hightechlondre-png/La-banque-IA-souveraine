@@ -237,3 +237,52 @@ CORS_ORIGINS=*
 - Filter par `user_id` sur `queen_recall` si on veut cloisonner la mémoire par user (actuellement fédérée globale — design choice).
 - Pydantic body models pour endpoints ruche (actuellement dict libre avec validations manuelles).
 
+---
+
+## 2026-04-22 — Phase 11 · Pack Marketing Public La Ruche ✅
+
+### Objectif
+Transformer l'architecture unique "Ruche" en **argument de vente visible** : page publique dédiée + widget intégré à la landing, exposant la valeur technique en <10 secondes de visite.
+
+### Nouveaux endpoints publics (no auth)
+- **`GET /api/public/ruche/status`** — statut des 9 abeilles + solde partiel OpenRouter
+  - Cache 45s (`_PUBLIC_RUCHE_STATUS_TTL`) pour résister à la pression marketing (landing virale = beaucoup de hits)
+  - **Champs exposés** : `status, tier, label, icon, specialty, budget, is_embedding`
+  - **Champs NON exposés** (sécurité branding) : `role` (slug interne), `used`, `total` crédits
+- **`POST /api/public/ruche/smart-route`** `{query}` — démo live du routage Qwen
+  - Rate-limit sliding window **5 requêtes/heure/IP** (`_PUBLIC_RUCHE_LIMIT`)
+  - Pydantic `PublicRucheRouteBody` (min=3, max=400 chars)
+  - Retourne `{label, specialty, similarity, top[], remaining_calls}` — pas de slug interne
+
+### Nouveau composant `<SmartRouteWidget />`
+- Fichier : `/app/frontend/src/components/ruche/SmartRouteWidget.jsx`
+- Props : `compact` (landing) / full (page publique)
+- Examples chips cliquables (4 queries pré-écrites)
+- Top-3 Qwen avec barres de progression animées + score similarity
+- Affichage compteur "X/5 restants"
+- Gestion error (429 rate-limit clair en français)
+
+### Nouvelle page publique `/la-ruche`
+- Fichier : `/app/frontend/src/pages/PublicRuche.jsx`
+- Hero accrocheur : "9 IA spécialisées, 1 superviseur sémantique"
+- Compteur live `X/9 Abeilles Actives` + solde OpenRouter partiel
+- Grid 9 cartes abeilles (spécialité + budget tokens + statut)
+- Section démo `#demo` avec `SmartRouteWidget` full
+- **SEO/OpenGraph** : `document.title`, meta `description`, `og:title`, `og:description`, `og:type`, `twitter:card`
+- Analytics : track `public_ruche_view` à chaque visite
+
+### Intégration Landing
+- Nouvelle section `#la-ruche-demo` avec `SmartRouteWidget` compact entre Features et CTA Audit
+- Lien "🐝 La Ruche" ajouté dans la nav header et footer
+- Accessible sans compte, conversion path : Landing → Widget démo → CTA "Voir les 9 abeilles" → `/la-ruche` → Signup
+
+### Tests régressifs (iteration 9 → 10)
+- Nouveau fichier `/app/backend/tests/test_phase11_public_ruche.py` : **14 tests GREEN** (100%)
+- Couvre : exposition propre du payload, Pydantic validation, rate-limit sliding window, isolation IP, cache TTL, régression auth.
+- 1 bug intermédiaire détecté + corrigé : fuite du slug `role` sur /status public (iter 9) → corrigé + vérifié sur les 9 bees (iter 10).
+
+### Impact mesurable
+- Cache warm hit : **<100ms** (vs 5s cold sur probe OpenRouter)
+- Routage Qwen depuis widget public : Llama 4 Maverick sélectionné correctement sur query "Audit Solidity" (sim 0.794)
+- Solde OpenRouter après tous les tests : **~$9.42/$30** restants (budget frugal préservé)
+
