@@ -2147,6 +2147,110 @@ async def public_ruche_smart_route(body: PublicRucheRouteBody, request: Request)
     }
 
 
+@api.get("/public/ruche/card.svg")
+async def public_ruche_social_card():
+    """Carte sociale Twitter/LinkedIn/OpenGraph pour La Ruche.
+    1200x630 SVG. Inclut le compteur live d'abeilles actives (cached).
+    """
+    from fastapi.responses import Response as _Response
+    import ruche as _ruche
+    # Try cache first (même cache que /status)
+    ok_count = 9
+    try:
+        cached = _PUBLIC_RUCHE_STATUS_CACHE.get("payload")
+        if cached and cached.get("bees"):
+            ok_count = sum(1 for b in cached["bees"] if b.get("status") == "ok")
+    except Exception:
+        pass
+
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0e14"/>
+      <stop offset="0.5" stop-color="#0f1420"/>
+      <stop offset="1" stop-color="#0b0e14"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="0.85" cy="0.15" r="0.5">
+      <stop offset="0" stop-color="#60a5fa" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#60a5fa" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.1" cy="0.9" r="0.5">
+      <stop offset="0" stop-color="#8b5cf6" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" x="0" y="0" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M 48 0 L 0 0 0 48" fill="none" stroke="#60a5fa" stroke-width="1" stroke-opacity="0.05"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <rect width="1200" height="630" fill="url(#glow1)"/>
+  <rect width="1200" height="630" fill="url(#glow2)"/>
+
+  <!-- Top-left brand -->
+  <g transform="translate(72,72)">
+    <rect x="0" y="0" width="44" height="44" rx="10" fill="#60a5fa" fill-opacity="0.12" stroke="#60a5fa" stroke-opacity="0.4"/>
+    <text x="22" y="29" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-weight="700" font-size="20" fill="#60a5fa">⬡</text>
+    <text x="60" y="19" font-family="Inter,Arial,sans-serif" font-weight="700" font-size="16" fill="#f1f5f9" letter-spacing="2">AEGIS-Q</text>
+    <text x="60" y="37" font-family="Menlo,monospace" font-size="9" fill="#94a3b8" letter-spacing="3">SOVEREIGN · MILITARY · AI</text>
+  </g>
+
+  <!-- Live pill top-right -->
+  <g transform="translate(944,80)">
+    <rect x="0" y="0" width="184" height="30" rx="15" fill="#60a5fa" fill-opacity="0.1" stroke="#60a5fa" stroke-opacity="0.4"/>
+    <circle cx="18" cy="15" r="4" fill="#10b981"/>
+    <text x="32" y="20" font-family="Menlo,monospace" font-size="11" fill="#60a5fa" letter-spacing="2">LIVE · HYBRID FEDERATED</text>
+  </g>
+
+  <!-- Hero heading -->
+  <g transform="translate(72,210)">
+    <text font-family="Inter,Arial,sans-serif" font-weight="800" fill="#f1f5f9">
+      <tspan x="0" y="0" font-size="84">🐝 La Ruche</tspan>
+    </text>
+    <text x="0" y="104" font-family="Inter,Arial,sans-serif" font-weight="800" font-size="72" fill="#f1f5f9">
+      <tspan fill="#60a5fa">9 IA spécialisées</tspan>,
+    </text>
+    <text x="0" y="188" font-family="Inter,Arial,sans-serif" font-weight="800" font-size="72" fill="#f1f5f9">1 superviseur Qwen.</text>
+  </g>
+
+  <!-- Bottom strip: stats -->
+  <g transform="translate(72,500)">
+    <rect x="0" y="0" width="1056" height="88" rx="18" fill="#0f1725" stroke="#1e293b"/>
+
+    <g transform="translate(28,22)">
+      <text font-family="Menlo,monospace" font-size="11" fill="#94a3b8" letter-spacing="3">ABEILLES ACTIVES</text>
+      <text y="34" font-family="Inter,Arial,sans-serif" font-weight="800" font-size="30" fill="#10b981">{ok_count}<tspan fill="#64748b">/9</tspan></text>
+    </g>
+
+    <line x1="210" y1="18" x2="210" y2="70" stroke="#1e293b"/>
+
+    <g transform="translate(230,22)">
+      <text font-family="Menlo,monospace" font-size="11" fill="#94a3b8" letter-spacing="3">ROUTAGE SÉMANTIQUE</text>
+      <text y="34" font-family="Inter,Arial,sans-serif" font-weight="800" font-size="30" fill="#f1f5f9">&lt;3s <tspan fill="#64748b" font-size="18">Qwen3</tspan></text>
+    </g>
+
+    <line x1="470" y1="18" x2="470" y2="70" stroke="#1e293b"/>
+
+    <g transform="translate(490,22)">
+      <text font-family="Menlo,monospace" font-size="11" fill="#94a3b8" letter-spacing="3">MÉMOIRE FÉDÉRÉE</text>
+      <text y="34" font-family="Inter,Arial,sans-serif" font-weight="800" font-size="30" fill="#f1f5f9">N-MEM-B <tspan fill="#64748b" font-size="18">Gemini</tspan></text>
+    </g>
+
+    <line x1="770" y1="18" x2="770" y2="70" stroke="#1e293b"/>
+
+    <g transform="translate(790,22)">
+      <text font-family="Menlo,monospace" font-size="11" fill="#94a3b8" letter-spacing="3">CTA</text>
+      <text y="34" font-family="Inter,Arial,sans-serif" font-weight="700" font-size="22" fill="#60a5fa">→ aegis-q.io/la-ruche</text>
+    </g>
+  </g>
+</svg>"""
+    return _Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=300, s-maxage=300"},
+    )
+
+
 @api.post("/analytics/track")
 async def analytics_track(body: TrackBody, request: Request):
     """Public endpoint — the frontend calls this on landing/brochure view.

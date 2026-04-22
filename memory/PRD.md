@@ -286,3 +286,14 @@ Transformer l'architecture unique "Ruche" en **argument de vente visible** : pag
 - Routage Qwen depuis widget public : Llama 4 Maverick sélectionné correctement sur query "Audit Solidity" (sim 0.794)
 - Solde OpenRouter après tous les tests : **~$9.42/$30** restants (budget frugal préservé)
 
+### Bonus Marketing (post-testing)
+- **`GET /api/public/ruche/card.svg`** — carte sociale OpenGraph/Twitter 1200×630
+  - SVG natif (4.3 KB), compteur abeilles actives dynamique (lu depuis le cache 45s)
+  - Design cohérent brand : grid subtil, 2 glows radiaux (blue/purple), strip stats bas
+  - Meta tags injectés dans `PublicRuche.jsx` : `og:image`, `og:image:width=1200`, `og:image:height=630`, `twitter:card=summary_large_image`, `twitter:image`, `twitter:title`, `twitter:description`
+- **Boutons Share sur `/la-ruche`** (hero) :
+  - 𝕏 Twitter — `twitter.com/intent/tweet` pré-rempli avec texte FR + hashtags (#AEGISQ #AI #LLM)
+  - in LinkedIn — `linkedin.com/sharing/share-offsite`
+  - Copier le lien — `navigator.clipboard` avec feedback visuel (Check pendant 2s)
+  - `data-testid` : `share-x-btn`, `share-linkedin-btn`, `share-copy-btn`
+

@@ -3,7 +3,7 @@ import axios from 'axios'
 import { Link } from 'react-router-dom'
 import {
   Hexagon, Loader2, CheckCircle2, XCircle, RefreshCw,
-  ArrowRight, ExternalLink, Sparkles,
+  ArrowRight, ExternalLink, Sparkles, Share2, Check, Copy,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -26,6 +26,27 @@ export default function PublicRuche() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
+  const [copied, setCopied] = useState(false)
+
+  const pageUrl = typeof window !== 'undefined' ? `${window.location.origin}/la-ruche` : ''
+  const ogImage = `${BACKEND}/api/public/ruche/card.svg`
+  const shareText = '9 IA spécialisées. 1 superviseur Qwen. <3s de routage sémantique. Testez en live :'
+
+  const shareX = () => {
+    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(pageUrl)}&hashtags=${encodeURIComponent('AEGISQ,AI,LLM')}`
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+  const shareLinkedIn = () => {
+    const url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(pageUrl)}`
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(pageUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (_) {}
+  }
 
   const load = async () => {
     try {
@@ -59,7 +80,13 @@ export default function PublicRuche() {
     setMeta('og:title', 'La Ruche · AEGIS-Q — Hybrid Federated AI')
     setMeta('og:description', '9 IA spécialisées, routage sémantique Qwen, mémoire fédérée Gemini. Testez le routage en live.')
     setMeta('og:type', 'website')
+    setMeta('og:image', ogImage)
+    setMeta('og:image:width', '1200')
+    setMeta('og:image:height', '630')
     setMeta('twitter:card', 'summary_large_image')
+    setMeta('twitter:image', ogImage)
+    setMeta('twitter:title', 'La Ruche · AEGIS-Q — 9 IA spécialisées, 1 superviseur Qwen')
+    setMeta('twitter:description', 'Testez le routage sémantique en direct. 5 démos/heure sans inscription.')
   }, [])
 
   const bees = data?.bees || []
@@ -136,6 +163,35 @@ export default function PublicRuche() {
               Tester en direct
             </Button>
           </a>
+        </div>
+
+        {/* Share row */}
+        <div className="mt-5 flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase mr-1">
+            <Share2 className="h-3 w-3 inline mr-1" />
+            Partager
+          </span>
+          <button
+            data-testid="share-x-btn"
+            onClick={shareX}
+            className="text-[11px] font-semibold text-foreground bg-secondary/70 hover:bg-secondary border border-border hover:border-primary/40 rounded-full px-3 py-1.5 transition-colors"
+          >
+            𝕏 Twitter
+          </button>
+          <button
+            data-testid="share-linkedin-btn"
+            onClick={shareLinkedIn}
+            className="text-[11px] font-semibold text-foreground bg-secondary/70 hover:bg-secondary border border-border hover:border-primary/40 rounded-full px-3 py-1.5 transition-colors"
+          >
+            in LinkedIn
+          </button>
+          <button
+            data-testid="share-copy-btn"
+            onClick={copyLink}
+            className="text-[11px] font-semibold text-foreground bg-secondary/70 hover:bg-secondary border border-border hover:border-primary/40 rounded-full px-3 py-1.5 transition-colors flex items-center gap-1.5"
+          >
+            {copied ? <><Check className="h-3 w-3 text-green-400" /> Copié</> : <><Copy className="h-3 w-3" /> Copier le lien</>}
+          </button>
         </div>
       </section>
 
