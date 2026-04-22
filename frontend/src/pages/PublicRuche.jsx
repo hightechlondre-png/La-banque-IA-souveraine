@@ -184,8 +184,8 @@ export default function PublicRuche() {
               const st = STATUS_COLORS[b.status] || STATUS_COLORS.error
               return (
                 <div
-                  key={b.role}
-                  data-testid={`public-bee-${b.role}`}
+                  key={b.label}
+                  data-testid={`public-bee-${(b.label || '').toLowerCase().replace(/\s+/g, '-')}`}
                   className={cn(
                     'rounded-xl p-4 border bg-card/70 backdrop-blur-sm flex items-start gap-3',
                     b.status === 'ok' && 'ring-1 ring-green-500/20 border-green-500/20',

@@ -1,0 +1,33 @@
+{
+  "summary": "Phase 11 retest (iter 10) après 2 fixes sur /api/public/ruche/status: (a) suppression du slug interne 'role' du dict enriched (server.py ligne ~2101-2109), (b) ajout d'un cache TTL 45s (_PUBLIC_RUCHE_STATUS_CACHE) pour réduire la pression OpenRouter. Résultat: 14/14 GREEN (12 tests existants no-regression + 2 nouveaux tests: role_not_leaked tightened avec vérif des 9 bees + vérif qu'aucune clé hors whitelist n'est exposée, et cache_hit_is_fast mesurant la latence warm + l'égalité des 'ts'). Détails mesurés sur cette run: cold=60ms (cache déjà chaud d'une run précédente dans la même fenêtre 45s — cold réel ~5s sur premier appel après TTL expiré, confirmé en lecture code), warm2=73ms, warm3=73ms, ts identiques sur les 3 appels (preuve du cache hit). Bug 'role' leak corrigé et validé sur chacune des 9 bees (test élargi au-delà du simple 'role not in b' vers une whitelist complète {status, tier, label, icon, specialty, budget, is_embedding}). No-regression: rate-limit 5/h/IP avec 6e=429 'Limite atteinte' OK, buckets IP indépendants OK, Pydantic min=3/max=400 OK, smart-route sans auth OK et 'role' absent, régression auth (/api/auth/login + /api/ruche/status + /api/ruche/smart-route) OK.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_phase11_public_ruche.py",
+    "/app/test_reports/pytest/iteration_10_phase11.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:2089 _PUBLIC_RUCHE_STATUS_CACHE est un dict global mutable sans asyncio.Lock — OK pour un endpoint public CPython GIL-protected, mais 2 requêtes concurrentes en cold state peuvent déclencher 2 appels swarm_status() parallèles (double-fetch bénin mais observable). Ajouter un lock (ou un event 'fetch in progress') si la charge monte.",
+    "server.py — le cache TTL 45s retourne aussi 'ts' (now_iso()) identique pendant 45s. Côté front, si un composant affiche 'dernière MAJ', il paraîtra figé ; acceptable pour un statut qui change rarement, mais à documenter si le widget affiche cette valeur.",
+    "server.py — carry-over iter 9 non bloquants: (i) _check_public_ruche_rate toujours sans pruning périodique des IPs staled (croissance mémoire linéaire sur endpoint public), (ii) fichier monolithique 2251 lignes à splitter (module public/ et ruche/), (iii) PublicRucheRouteBody sans top_k (hardcodé 3 côté route) volontaire pour démo — OK."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase11_public_ruche.py (ajout test_status_cache_hit_is_fast + durcissement test_status_role_slug_not_leaked avec whitelist clés autorisées)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "skipped per request"},
+  "test_credentials": "demo@aegis-q.mil / Aegis2026! (from /app/memory/test_credentials.md — unchanged)",
+  "seed_data_creation": "Aucune. X-Forwarded-For aléatoires pour buckets rate-limit frais par test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 11 public endpoints 100% validés. Les 2 fixes demandés sont confirmés en place (server.py ~L2089-2123): cache TTL 45s fonctionnel (warm=~73ms, ts identiques) et 'role' retiré du dict enriched sur les 9 bees. Test file /app/backend/tests/test_phase11_public_ruche.py étendu à 14 tests. Prochaines tâches main agent: (a) ajouter asyncio.Lock autour du cache fetch pour éviter double-fetch concurrent en cold state, (b) pruning des IP staled dans _PUBLIC_RUCHE_IP_RATE, (c) split server.py en modules.",
+  "rca of the issue": {
+    "bug": "Iter 9 RED: fuite du slug 'role' sur GET /api/public/ruche/status",
+    "fix_applied": "server.py ligne ~2101-2109 — la clé 'role': b.get('role') a été retirée du dict enriched dans public_ruche_status(). Commentaire ajouté: '# NOTE: on n'expose PAS role (slug interne). Seul label est publique.'",
+    "validation": "test_status_role_slug_not_leaked + test_status_bees_schema confirment que les 9 bees exposent exactement {status, tier, label, icon, specialty, budget, is_embedding} sans 'role' ni autre clé hors whitelist.",
+    "cache_fix_applied": "server.py ligne ~2078-2091 — ajout _PUBLIC_RUCHE_STATUS_CACHE {ts, payload} + TTL 45s. Validation: warm calls < 500ms (73ms observé) et ts identique sur 3 appels consécutifs."
+  }
+}

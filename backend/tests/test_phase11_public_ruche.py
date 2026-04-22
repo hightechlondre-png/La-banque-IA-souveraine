@@ -74,11 +74,51 @@ class TestPublicStatus:
         """Per spec note: 'role' (grade_fou, llm1, mem0_1...) = slug interne, NE doit PAS fuiter publiquement."""
         r = http.get(f"{BASE_URL}/api/public/ruche/status", timeout=90)
         assert r.status_code == 200
-        leaks = [b for b in r.json().get("bees", []) if "role" in b]
+        bees = r.json().get("bees", [])
+        assert len(bees) == 9, f"expected 9 bees, got {len(bees)}"
+        allowed = {"status", "tier", "label", "icon", "specialty", "budget", "is_embedding"}
+        leaks = [b for b in bees if "role" in b]
         assert not leaks, (
             f"Internal slug 'role' leaked in /api/public/ruche/status for {len(leaks)} bee(s). "
             f"Example: {leaks[0] if leaks else None}"
         )
+        # Also verify no unexpected keys leaked per spec
+        for b in bees:
+            extra = set(b.keys()) - allowed
+            assert not extra, f"Unexpected keys leaked for bee {b.get('label')}: {extra}"
+
+    def test_status_cache_hit_is_fast(self, http):
+        """Cache TTL 45s: 1ère req = cold (~5s OK), 2ème/3ème immédiates = <500ms (cache hit).
+
+        Also verify 'ts' is identical between cached responses (cache returns same payload).
+        """
+        # Cold call (may be slow — up to 90s)
+        t0 = time.time()
+        r1 = http.get(f"{BASE_URL}/api/public/ruche/status", timeout=90)
+        cold = time.time() - t0
+        assert r1.status_code == 200, r1.text
+        ts1 = r1.json().get("ts")
+
+        # Warm call #2 — must be fast
+        t1 = time.time()
+        r2 = http.get(f"{BASE_URL}/api/public/ruche/status", timeout=10)
+        warm2 = time.time() - t1
+        assert r2.status_code == 200
+        ts2 = r2.json().get("ts")
+
+        # Warm call #3 — also fast
+        t2 = time.time()
+        r3 = http.get(f"{BASE_URL}/api/public/ruche/status", timeout=10)
+        warm3 = time.time() - t2
+        assert r3.status_code == 200
+        ts3 = r3.json().get("ts")
+
+        print(f"[cache] cold={cold:.2f}s warm2={warm2*1000:.0f}ms warm3={warm3*1000:.0f}ms")
+        # Cache hit should be drastically faster than cold
+        assert warm2 < 1.0, f"2nd call not cached (>=1s): {warm2:.2f}s"
+        assert warm3 < 1.0, f"3rd call not cached (>=1s): {warm3:.2f}s"
+        # ts should be identical (same cached payload)
+        assert ts1 == ts2 == ts3, f"ts differs (cache not hit): {ts1} {ts2} {ts3}"
 
 
 # ---------- PUBLIC SMART-ROUTE ----------

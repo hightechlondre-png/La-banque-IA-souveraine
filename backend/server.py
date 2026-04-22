@@ -2075,18 +2075,30 @@ async def _check_public_ruche_rate(ip: str):
         _PUBLIC_RUCHE_IP_RATE[ip] = recent
 
 
+_PUBLIC_RUCHE_STATUS_CACHE: Dict[str, Any] = {"ts": 0, "payload": None}
+_PUBLIC_RUCHE_STATUS_TTL = 45  # seconds
+
+
 @api.get("/public/ruche/status")
 async def public_ruche_status():
-    """Statut public de La Ruche — pas d'auth, pour page marketing."""
+    """Statut public de La Ruche — pas d'auth, pour page marketing.
+    Cache 45s pour réduire la pression OpenRouter sur endpoint viral.
+    """
     import ruche as _ruche
+    now = _time.time()
+    cached = _PUBLIC_RUCHE_STATUS_CACHE
+    if cached["payload"] and (now - cached["ts"]) < _PUBLIC_RUCHE_STATUS_TTL:
+        return cached["payload"]
     if not _ruche.is_ruche_enabled():
-        return {"enabled": False, "bees": [], "message": "La Ruche n'est pas configurée."}
+        payload = {"enabled": False, "bees": [], "message": "La Ruche n'est pas configurée."}
+        _PUBLIC_RUCHE_STATUS_CACHE.update({"ts": now, "payload": payload})
+        return payload
     bees = await _ruche.swarm_status()
     enriched = []
     for b in bees:
         meta = _ruche.BEES.get(b.get("role"), {})
+        # NOTE: on n'expose PAS 'role' (slug interne). Seul 'label' est publique.
         enriched.append({
-            "role": b.get("role"),
             "status": b.get("status"),
             "tier": meta.get("tier"),
             "label": meta.get("label"),
@@ -2098,16 +2110,17 @@ async def public_ruche_status():
     credits = None
     try:
         c = await _ruche.get_credits()
-        # N'expose que remaining en version publique (pas used/total)
         credits = {"remaining": c.get("remaining")}
     except Exception:
         pass
-    return {
+    payload = {
         "enabled": True,
         "bees": enriched,
         "credits": credits,
         "ts": now_iso(),
     }
+    _PUBLIC_RUCHE_STATUS_CACHE.update({"ts": now, "payload": payload})
+    return payload
 
 
 class PublicRucheRouteBody(BaseModel):
