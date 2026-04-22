@@ -8,6 +8,7 @@ import {
   ArrowRight, TrendingUp, Network,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import SmartRouteWidget from '@/components/ruche/SmartRouteWidget'
 
 const FEATURES = [
   {
@@ -99,6 +100,17 @@ export default function Landing() {
             </div>
           </div>
           <nav className="flex items-center gap-2">
+            <Link to="/la-ruche">
+              <Button
+                data-testid="landing-ruche-nav-btn"
+                variant="ghost"
+                size="sm"
+                className="hidden sm:inline-flex gap-1.5"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                La Ruche
+              </Button>
+            </Link>
             <Link to="/public-audit">
               <Button
                 data-testid="landing-audit-nav-btn"
@@ -202,6 +214,28 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* Smart Route live demo */}
+      <section id="la-ruche-demo" className="relative z-10 max-w-7xl mx-auto px-6 py-10 scroll-mt-8">
+        <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-[10px] font-mono text-primary tracking-widest uppercase mb-2">La Ruche · Live</p>
+            <h3 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground max-w-3xl">
+              9 IA spécialisées. 1 superviseur Qwen. 0 configuration.
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground max-w-2xl">
+              Tape ta tâche — Qwen3 Embedding calcule la similarité sémantique avec les 7 abeilles chat et choisit la meilleure en <span className="text-foreground font-semibold">&lt;3 secondes</span>. 5 démos/heure, pas d'inscription.
+            </p>
+          </div>
+          <Link to="/la-ruche">
+            <Button data-testid="landing-ruche-cta-btn" variant="outline" size="sm" className="gap-1.5 shrink-0">
+              Voir les 9 abeilles
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </Link>
+        </div>
+        <SmartRouteWidget compact />
+      </section>
+
       {/* Public audit CTA strip */}
       <section className="relative z-10 max-w-7xl mx-auto px-6 py-14">
         <div className="bg-gradient-to-br from-primary/10 via-card to-accent/10 border border-primary/20 rounded-2xl p-8 md:p-12 relative overflow-hidden">
@@ -263,6 +297,7 @@ export default function Landing() {
             AEGIS-Q · 2026 · Sovereign Military AI Banking
           </div>
           <div className="flex gap-4 text-[11px] text-muted-foreground">
+            <Link to="/la-ruche" className="hover:text-primary transition-colors">La Ruche</Link>
             <Link to="/public-audit" className="hover:text-primary transition-colors">Audit gratuit</Link>
             <Link to="/login" className="hover:text-primary transition-colors">Connexion</Link>
           </div>

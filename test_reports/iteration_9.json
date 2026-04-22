@@ -1,0 +1,46 @@
+{
+  "summary": "Phase 11 backend testing — endpoints publics /api/public/ruche/status & /api/public/ruche/smart-route (no auth, IP rate-limited). Created /app/backend/tests/test_phase11_public_ruche.py (13 tests). Résultats: 12/13 GREEN + 1 RED (fuite du slug interne 'role' sur /status). Détails: (a) GET /status sans auth retourne enabled=true, 9 bees avec status/tier/label/icon/specialty/budget/is_embedding + credits={remaining} uniquement (used/total non exposés) ✓; (b) POST /smart-route sans auth avec query 'Audit Solidity réentrance' retourne label/specialty/similarity/top[]/remaining_calls, et le slug 'role' N'EST PAS dans la réponse (ni top-level, ni dans top[]) ✓; (c) Pydantic validation: query<3 chars → 422 ✓, query>400 chars → 422 ✓; (d) Rate-limit IP: 5 requêtes X-Forwarded-For=10.x.y.z passent (200) + 6ème → 429 avec detail contenant 'Limite atteinte' ✓; (e) Buckets IP indépendants: ip_a burned (429) n'affecte pas ip_b (200) ✓; (f) Régression: /api/auth/login demo@aegis-q.mil, /api/ruche/status (auth), /api/ruche/smart-route (auth) OK ✓. Note: 1 test (credits_partial) a eu un 502 transitoire du preview ingress en full-suite mais passe en isolation — flakiness réseau, pas un bug backend.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/public/ruche/status",
+        "issue": "FUITE du slug interne 'role' (grade_fou, llm1, llm2, memoire1, memoire2, mem0_1, scribouille1, scribouille2, reine_nmemb) sur l'endpoint PUBLIC. La review spec liste explicitement les 7 champs autorisés (status/tier/label/icon/specialty/budget/is_embedding) sans 'role', et la note agent précise que 'role' est un slug interne qui NE doit PAS fuiter publiquement — seul 'label' doit être exposé (argument marketing branding LLMs). Correction: retirer la clé 'role' du dict enriched (server.py:2089). L'endpoint authentifié /api/ruche/status peut conserver 'role' (usage interne)."
+      },
+      {
+        "endpoint": "GET /api/public/ruche/status",
+        "issue": "Latence ~5-6s par appel (swarm_status ping les 9 bees via OpenRouter). Sur un endpoint marketing public rate-limité, un cache TTL de 30-60s côté serveur réduirait drastiquement la charge et améliorerait l'UX (widget landing + page /la-ruche rechargent souvent). Bonus: résout aussi les 502 ingress transitoires observés sous charge."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_phase11_public_ruche.py",
+    "/app/test_reports/pytest/iteration_9_phase11.xml"
+  ],
+  "action_items": [
+    "BUG (marketing/branding): Retirer le champ 'role' de la réponse de GET /api/public/ruche/status (server.py ligne ~2089). Laisser uniquement status/tier/label/icon/specialty/budget/is_embedding comme documenté dans la spec. L'endpoint authentifié /api/ruche/status n'est PAS concerné.",
+    "OPTIONNEL: ajouter un cache TTL (30-60s) sur public_ruche_status() pour réduire les ~5s de latence et la pression sur OpenRouter — pertinent sur endpoint public visible sur landing page."
+  ],
+  "critical_code_review_comments": [
+    "server.py:2089 — le dict `enriched` inclut 'role': b.get('role'), ce qui expose le slug interne. Incohérent avec le comportement de /smart-route (lignes 2125-2134) qui, lui, filtre correctement 'role' et n'expose que 'label'. Uniformiser.",
+    "server.py — fichier monolithique 2238 lignes (carry-over). Extraire un module public/ et un module ruche/ pour séparer routes privées/publiques/ruche.",
+    "_check_public_ruche_rate (server.py:2064) — pas de pruning périodique des IPs staled (contrairement à _check_track_rate ligne 2041). Ajouter un sweep similaire sinon _PUBLIC_RUCHE_IP_RATE grossit indéfiniment sur endpoint public.",
+    "PublicRucheRouteBody (server.py:2113) — seul champ `query` ; pas de top_k configurable (hardcodé à 3 ligne 2123) — OK pour la démo publique, volontaire, à documenter."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase11_public_ruche.py (created)"
+  ],
+  "success_rate": {"backend": "92% (12/13 — 1 bug confirmé: fuite 'role' sur /status public)", "frontend": "skipped per request"},
+  "test_credentials": "demo@aegis-q.mil / Aegis2026! (from /app/memory/test_credentials.md — unchanged)",
+  "seed_data_creation": "Aucune donnée seed créée. Les tests utilisent X-Forwarded-For aléatoires (10.x.y.z) pour garantir des buckets rate-limit frais par test.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 11 publique validée. 1 seul bug réel: /api/public/ruche/status expose encore le slug 'role' pour les 9 bees — à retirer dans server.py ligne ~2089 (le reste de la spec est OK: /smart-route public filtre bien role, rate-limit 5/h/IP + 429 'Limite atteinte' OK, buckets IP indépendants OK, Pydantic min=3 max=400 OK, régression authentifiée OK). Après fix, re-run: pytest /app/backend/tests/test_phase11_public_ruche.py — le test `test_status_role_slug_not_leaked` doit passer. Si 502 transitoire ingress: retry (déjà prévu sur /ruche/status authed, à considérer sur /public/ruche/status si flakiness persiste).",
+  "rca of the issue": {
+    "bug": "Fuite du slug interne 'role' sur GET /api/public/ruche/status",
+    "reproduction": "curl -s https://<BACKEND_URL>/api/public/ruche/status | python3 -c \"import sys,json;d=json.load(sys.stdin);print([b.get('role') for b in d['bees']])\" → affiche ['grade_fou','llm1','llm2','memoire1','memoire2','mem0_1','scribouille1','scribouille2','reine_nmemb']",
+    "root_cause": "server.py ligne 2089 dans public_ruche_status(): le dict enriched.append({...}) inclut 'role': b.get('role'). Ce champ est volontairement filtré dans public_ruche_smart_route() (lignes 2125-2134) mais a été oublié dans public_ruche_status().",
+    "mitigation": "Supprimer la ligne `\"role\": b.get(\"role\"),` du dict enriched (ligne 2089) OU la remplacer par un identifiant public opaque si un ID stable est nécessaire côté front. Impact: aucun sur l'UI (PublicRuche.jsx / SmartRouteWidget.jsx affichent label + icon + tier, pas role — à confirmer par main agent)."
+  }
+}

@@ -2051,6 +2051,89 @@ class TrackBody(BaseModel):
     properties: Optional[Dict[str, Any]] = None
 
 
+# ---------------------------------------------------------------------------
+# 🌐 PUBLIC RUCHE DEMO — marketing page (no auth, IP rate-limited)
+# ---------------------------------------------------------------------------
+_PUBLIC_RUCHE_IP_RATE: Dict[str, List[float]] = {}
+_PUBLIC_RUCHE_LOCK = asyncio.Lock()
+_PUBLIC_RUCHE_LIMIT = 5          # smart-routes per hour per IP
+_PUBLIC_RUCHE_WINDOW = 3600
+_PUBLIC_RUCHE_QUERY_MAX = 400
+
+
+async def _check_public_ruche_rate(ip: str):
+    now = _time.time()
+    async with _PUBLIC_RUCHE_LOCK:
+        recent = [t for t in _PUBLIC_RUCHE_IP_RATE.get(ip, []) if t > now - _PUBLIC_RUCHE_WINDOW]
+        if len(recent) >= _PUBLIC_RUCHE_LIMIT:
+            _PUBLIC_RUCHE_IP_RATE[ip] = recent
+            raise HTTPException(
+                status_code=429,
+                detail=f"Limite atteinte: {_PUBLIC_RUCHE_LIMIT} démos/heure. Créez un compte pour accéder à la Ruche complète.",
+            )
+        recent.append(now)
+        _PUBLIC_RUCHE_IP_RATE[ip] = recent
+
+
+@api.get("/public/ruche/status")
+async def public_ruche_status():
+    """Statut public de La Ruche — pas d'auth, pour page marketing."""
+    import ruche as _ruche
+    if not _ruche.is_ruche_enabled():
+        return {"enabled": False, "bees": [], "message": "La Ruche n'est pas configurée."}
+    bees = await _ruche.swarm_status()
+    enriched = []
+    for b in bees:
+        meta = _ruche.BEES.get(b.get("role"), {})
+        enriched.append({
+            "role": b.get("role"),
+            "status": b.get("status"),
+            "tier": meta.get("tier"),
+            "label": meta.get("label"),
+            "icon": meta.get("icon"),
+            "specialty": meta.get("role"),
+            "budget": meta.get("budget"),
+            "is_embedding": meta.get("embedding", False),
+        })
+    credits = None
+    try:
+        c = await _ruche.get_credits()
+        # N'expose que remaining en version publique (pas used/total)
+        credits = {"remaining": c.get("remaining")}
+    except Exception:
+        pass
+    return {
+        "enabled": True,
+        "bees": enriched,
+        "credits": credits,
+        "ts": now_iso(),
+    }
+
+
+class PublicRucheRouteBody(BaseModel):
+    query: str = Field(min_length=3, max_length=_PUBLIC_RUCHE_QUERY_MAX)
+
+
+@api.post("/public/ruche/smart-route")
+async def public_ruche_smart_route(body: PublicRucheRouteBody, request: Request):
+    """Démo publique du routage Qwen — pas d'auth, rate-limited par IP."""
+    ip = _client_ip(request)
+    await _check_public_ruche_rate(ip)
+    import ruche as _ruche
+    route = await _ruche.smart_route(body.query, top_k=3)
+    # N'expose pas les noms techniques internes (grade_fou, mem0_1...), juste le label
+    return {
+        "label": route.get("label"),
+        "specialty": route.get("specialty"),
+        "similarity": route.get("similarity"),
+        "top": [
+            {"label": t.get("label"), "specialty": t.get("specialty"), "similarity": t.get("similarity")}
+            for t in route.get("top", [])
+        ],
+        "remaining_calls": max(0, _PUBLIC_RUCHE_LIMIT - len(_PUBLIC_RUCHE_IP_RATE.get(ip, []))),
+    }
+
+
 @api.post("/analytics/track")
 async def analytics_track(body: TrackBody, request: Request):
     """Public endpoint — the frontend calls this on landing/brochure view.

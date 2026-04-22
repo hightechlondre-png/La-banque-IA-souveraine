@@ -10,6 +10,7 @@ import Landing from './pages/Landing';
 import PaymentSuccess from './pages/PaymentSuccess';
 import RucheMonitor from './pages/RucheMonitor';
 import PublicAudit from './pages/PublicAudit';
+import PublicRuche from './pages/PublicRuche';
 import Dashboard from './pages/Dashboard';
 import Tokenomics from './pages/Tokenomics';
 import Staking from './pages/Staking';
@@ -92,6 +93,7 @@ const AuthenticatedApp = () => {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/public-audit" element={<PublicAudit />} />
+      <Route path="/la-ruche" element={<PublicRuche />} />
       <Route
         path="/payments/success"
         element={
