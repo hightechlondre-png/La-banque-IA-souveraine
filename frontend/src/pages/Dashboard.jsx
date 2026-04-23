@@ -7,6 +7,7 @@ import RecentTransactions from "../components/dashboard/RecentTransactions";
 import ArchitectureMap from "../components/dashboard/ArchitectureMap";
 import ResonanceChart from "../components/dashboard/ResonanceChart";
 import MarketPulse from "../components/dashboard/MarketPulse";
+import RucheSavingsCompact from "../components/dashboard/RucheSavingsCompact";
 
 export default function Dashboard() {
   return (
@@ -24,6 +25,9 @@ export default function Dashboard() {
         <StatCard icon={Users} label="Holders" value="24,871" change="3.2%" changeType="up" />
         <StatCard icon={Lock} label="Staked" value="38.7%" change="1.8%" changeType="up" />
       </div>
+
+      {/* Ruche Savings (rétention) */}
+      <RucheSavingsCompact />
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

@@ -1317,6 +1317,37 @@ async def ruche_savings(
     }
 
 
+@api.get("/ruche/savings/trend")
+async def ruche_savings_trend(
+    days: int = 14,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Tokens économisés par jour (pour sparkline). Default 14j."""
+    days = max(1, min(int(days or 14), 90))
+    from datetime import timedelta
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    # Agrège par jour (YYYY-MM-DD prefix de created_at)
+    pipeline = [
+        {"$match": {"user_id": user["id"], "created_at": {"$gte": since}}},
+        {"$group": {
+            "_id": {"$substr": ["$created_at", 0, 10]},
+            "count": {"$sum": 1},
+            "tokens_used": {"$sum": "$tokens_budget"},
+        }},
+        {"$sort": {"_id": 1}},
+    ]
+    series: List[Dict[str, Any]] = []
+    async for row in db.ruche_usage.aggregate(pipeline):
+        baseline = row["count"] * _BASELINE_TOKENS_PER_REQ
+        series.append({
+            "date": row["_id"],
+            "requests": row["count"],
+            "tokens_used": int(row["tokens_used"] or 0),
+            "tokens_saved": max(0, baseline - int(row["tokens_used"] or 0)),
+        })
+    return {"window_days": days, "series": series}
+
+
 FUNCTIONS = {
     "gemmaChat": fn_gemma_chat,
     "invokeLLM": fn_invoke_llm,

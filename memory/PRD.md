@@ -354,3 +354,34 @@ Matérialiser la valeur de la Ruche pour les utilisateurs premium — chaque req
 - UI rendue avec toutes les KPIs et barre Mistral Large.
 - Validation edge cases : `days=9999` clamp à 365, sans auth → 401, 0 requête → message invitant à utiliser une abeille.
 
+---
+
+## 2026-04-23 · Phase 12.5 — Dashboard Home Integration ✅
+
+### Objectif
+Augmenter la visibilité des économies : au lieu d'aller sur `/ruche`, l'utilisateur voit le widget **dès la page Dashboard** chaque connexion → création d'habitude + rappel quotidien de valeur.
+
+### Nouveau endpoint `GET /api/ruche/savings/trend?days=N`
+- Retourne la série temporelle quotidienne pour sparkline (default 14j, max 90j)
+- Pipeline MongoDB `$group` par `$substr(created_at, 0, 10)` (YYYY-MM-DD)
+- Pour chaque jour : `{date, requests, tokens_used, tokens_saved}`
+
+### Nouveau composant `<RucheSavingsCompact />`
+- Fichier : `/app/frontend/src/components/dashboard/RucheSavingsCompact.jsx`
+- Integré dans `Dashboard.jsx` (juste après la Stats Row, avant les Charts)
+- **Big number vert saillant** : tokens économisés sur 30j
+- **Sparkline SVG inline** (160×40) : polyline verte + area gradient sous la courbe
+- Stats compactes bas de widget : `X req · Y% économisé · $Z évité`
+- **Lien cliquable** vers `/ruche` avec flèche animée au hover (micro-interaction)
+- États gérés : loading, empty (0 req avec CTA onboarding), data
+- `data-testid` : `dashboard-savings-card`, `savings-sparkline`
+
+### Validation live
+- 58 requêtes synthétiques insérées sur 10 jours → **69 000 tokens économisés · 59% · $0.2070 évité**
+- Sparkline rendue avec courbe + zone dégradée verte
+- Hover fonctionnel, route `/ruche` atteignable
+- Tests régressifs : **test_ruche.py 11/11 GREEN** (Phase 9 core Ruche intact)
+
+### Boucle rétention complète
+`Dashboard home` (widget saillant) → `clic` → `/ruche` (détails + Token Savings full) → `confidence user = +1` chaque jour.
+
