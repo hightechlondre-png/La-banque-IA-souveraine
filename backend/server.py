@@ -274,6 +274,7 @@ async def staking_advice(
         system_prompt=system,
         messages=[{"role": "user", "content": prompt}],
         usecase="staking_advisor",
+        user_id=user["id"],
     )
     return {
         "advice": advice,
@@ -457,8 +458,15 @@ async def entity_delete(
 # ---------------------------------------------------------------------------
 # LLM helper (Claude Opus 4.5)
 # ---------------------------------------------------------------------------
-async def llm_chat(session_id: str, system_prompt: str, messages: List[Dict[str, str]], usecase: str = "cognitive_chat") -> str:
-    """Multi-turn chat. Route via La Ruche first, fallback to Claude Opus 4.5 if all bees fail."""
+async def llm_chat(
+    session_id: str,
+    system_prompt: str,
+    messages: List[Dict[str, str]],
+    usecase: str = "cognitive_chat",
+    user_id: Optional[str] = None,
+) -> str:
+    """Multi-turn chat. Route via La Ruche first, fallback to Claude Opus 4.5 if all bees fail.
+    Enregistre l'usage dans db.ruche_usage pour le Token Savings Dashboard."""
     # 1) Try La Ruche (OpenRouter)
     try:
         import ruche as _ruche
@@ -471,6 +479,21 @@ async def llm_chat(session_id: str, system_prompt: str, messages: List[Dict[str,
             )
             if result.get("content"):
                 logger.info("[Ruche] %s → %s OK", usecase, result.get("bee_used"))
+                # Fire-and-forget: log usage pour savings dashboard
+                try:
+                    bee_role = result.get("bee_used")
+                    budget = _ruche.BEES.get(bee_role, {}).get("budget") or 800
+                    asyncio.create_task(db.ruche_usage.insert_one({
+                        "id": str(uuid.uuid4()),
+                        "bee_role": bee_role,
+                        "bee_label": result.get("bee_label"),
+                        "usecase": usecase,
+                        "tokens_budget": int(budget),
+                        "user_id": user_id,
+                        "created_at": now_iso(),
+                    }))
+                except Exception as e:
+                    logger.warning("ruche_usage log failed: %s", e)
                 return result["content"]
             logger.warning("[Ruche] %s all bees failed, falling back to Claude Opus", usecase)
     except Exception as e:
@@ -518,7 +541,7 @@ AEGIS_SYSTEM_PROMPT = (
 async def fn_gemma_chat(body: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
     messages = body.get("messages", [])
     session_id = body.get("session_id", f"chat-{user['id']}")
-    reply = await llm_chat(session_id, AEGIS_SYSTEM_PROMPT, messages, usecase="cognitive_chat")
+    reply = await llm_chat(session_id, AEGIS_SYSTEM_PROMPT, messages, usecase="cognitive_chat", user_id=user["id"])
     return {"content": reply, "reply": reply}
 
 
@@ -599,6 +622,7 @@ async def fn_invoke_llm(body: Dict[str, Any], user: Dict[str, Any]) -> Dict[str,
         system_prompt=system,
         messages=messages,
         usecase=body.get("usecase") or "cognitive_chat",
+        user_id=user.get("id"),
     )
 
     if wants_json:
@@ -672,6 +696,7 @@ async def fn_orchestrate_agent(body: Dict[str, Any], user: Dict[str, Any]) -> Di
             system_prompt=sys_prompt,
             messages=[{"role": "user", "content": prompt}],
             usecase="agent_orchestr",
+            user_id=user["id"],
         )
     except Exception as e:  # pragma: no cover
         result = f"Erreur: {e}"
@@ -1022,6 +1047,7 @@ async def fn_test_skill(body: Dict[str, Any], user: Dict[str, Any]) -> Dict[str,
             system_prompt=system_prompt,
             messages=[{"role": "user", "content": test_input}],
             usecase="skill_test",
+            user_id=user["id"],
         )
         ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
         tokens = int(len(test_input) / 4 + len(result) / 4)
@@ -1219,6 +1245,77 @@ async def ruche_queen_recall(
     filter_tag = body.get("filter_tag")
     results = await _ruche.queen_recall(db.queen_memory, query, top_k=top_k, filter_tag=filter_tag)
     return {"query": query, "results": results, "count": len(results)}
+
+
+# --- Phase 12: Token Savings Dashboard --------------------------------------
+# Compare l'usage réel (budgets spécialisés) vs un modèle généraliste unique
+# Mistral Large à 2000 tok/req (baseline "sans Ruche").
+_BASELINE_TOKENS_PER_REQ = 2000  # hypothèse : sans Ruche, tout tapperait Mistral Large à max capacity
+# Coût OpenRouter Mistral Large (input+output moyen ~$3/1M tok). Approximation.
+_COST_PER_1K_TOKENS_USD = 0.003
+
+
+@api.get("/ruche/savings")
+async def ruche_savings(
+    days: int = 30,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Statistiques d'économie pour le Token Savings Dashboard.
+    - 'days' : fenêtre (default 30, max 365)
+    - par défaut : stats du user connecté. Admin (si future-proof) verrait global.
+    """
+    days = max(1, min(int(days or 30), 365))
+    from datetime import timedelta
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+    # Pipeline agrégation par abeille pour l'utilisateur
+    pipeline = [
+        {"$match": {"user_id": user["id"], "created_at": {"$gte": since}}},
+        {"$group": {
+            "_id": "$bee_role",
+            "count": {"$sum": 1},
+            "tokens_used": {"$sum": "$tokens_budget"},
+            "bee_label": {"$last": "$bee_label"},
+        }},
+        {"$sort": {"count": -1}},
+    ]
+    by_bee: List[Dict[str, Any]] = []
+    async for row in db.ruche_usage.aggregate(pipeline):
+        by_bee.append({
+            "bee_role": row["_id"],
+            "bee_label": row.get("bee_label"),
+            "count": row["count"],
+            "tokens_used": int(row["tokens_used"] or 0),
+        })
+
+    total_requests = sum(b["count"] for b in by_bee)
+    total_tokens_ruche = sum(b["tokens_used"] for b in by_bee)
+    baseline_tokens = total_requests * _BASELINE_TOKENS_PER_REQ
+    tokens_saved = max(0, baseline_tokens - total_tokens_ruche)
+    savings_ratio = (tokens_saved / baseline_tokens) if baseline_tokens > 0 else 0.0
+
+    cost_ruche = round(total_tokens_ruche / 1000 * _COST_PER_1K_TOKENS_USD, 4)
+    cost_baseline = round(baseline_tokens / 1000 * _COST_PER_1K_TOKENS_USD, 4)
+    cost_saved = round(cost_baseline - cost_ruche, 4)
+
+    return {
+        "window_days": days,
+        "total_requests": total_requests,
+        "tokens": {
+            "ruche_actual": total_tokens_ruche,
+            "baseline_single_model": baseline_tokens,
+            "saved": tokens_saved,
+            "savings_ratio": round(savings_ratio, 4),
+        },
+        "cost_usd": {
+            "ruche_actual": cost_ruche,
+            "baseline_single_model": cost_baseline,
+            "saved": cost_saved,
+        },
+        "by_bee": by_bee,
+        "ts": now_iso(),
+    }
+
 
 FUNCTIONS = {
     "gemmaChat": fn_gemma_chat,
@@ -1482,11 +1579,6 @@ async def stripe_webhook(request: Request):
             )
             logger.info("[webhook] Granted tier %s to user %s", tx["package_id"], tx["user_id"])
     return {"ok": True}
-
-    handler = FUNCTIONS.get(name)
-    if not handler:
-        raise HTTPException(status_code=404, detail=f"Function '{name}' not found")
-    return await handler(body or {}, user)
 
 
 # ---------------------------------------------------------------------------

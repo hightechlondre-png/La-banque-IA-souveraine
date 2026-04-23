@@ -297,3 +297,60 @@ Transformer l'architecture unique "Ruche" en **argument de vente visible** : pag
   - Copier le lien — `navigator.clipboard` avec feedback visuel (Check pendant 2s)
   - `data-testid` : `share-x-btn`, `share-linkedin-btn`, `share-copy-btn`
 
+---
+
+## 2026-04-23 — Phase 12 · Token Savings Dashboard (Rétention) ✅
+
+### Objectif
+Matérialiser la valeur de la Ruche pour les utilisateurs premium — chaque requête via Qwen économise des tokens vs un modèle généraliste unique. Argument concret pour justifier l'abonnement mois après mois.
+
+### Tracking usage (non-bloquant)
+- `llm_chat(...)` accepte désormais un `user_id: Optional[str]`.
+- Sur chaque succès Ruche, un doc est inséré dans `db.ruche_usage` via `asyncio.create_task` (fire-and-forget, ne ralentit pas la réponse) :
+  ```json
+  {
+    "id": "uuid",
+    "bee_role": "grade_fou|llm1|...",
+    "bee_label": "Mistral Large",
+    "usecase": "cognitive_chat",
+    "tokens_budget": 800,
+    "user_id": "...",
+    "created_at": "ISO8601"
+  }
+  ```
+- Tous les call-sites ont été mis à jour pour propager `user_id` : `/market/staking-advice`, `fn_gemma_chat`, `fn_invoke_llm`, `fn_orchestrate_agent`, `fn_test_skill`.
+
+### Nouvel endpoint `/api/ruche/savings`
+- Query params : `days` (1-365, default 30)
+- Auth requise (user voit ses propres stats)
+- Baseline de référence : **2000 tokens/requête** (= Mistral Large full capacity si tout passait par un seul modèle sans spécialisation)
+- Coût : **$0.003 / 1K tokens** (approx OpenRouter Mistral Large)
+- Agrégation MongoDB pipeline (`$match user_id + since` → `$group bee_role`)
+- Retour :
+  ```json
+  {
+    "window_days": 30,
+    "total_requests": 3,
+    "tokens": {"ruche_actual": 2400, "baseline_single_model": 6000, "saved": 3600, "savings_ratio": 0.6},
+    "cost_usd": {"ruche_actual": 0.0072, "baseline_single_model": 0.018, "saved": 0.0108},
+    "by_bee": [{"bee_role":"grade_fou","bee_label":"Mistral Large","count":3,"tokens_used":2400}]
+  }
+  ```
+
+### Nouveau composant `<RucheSavings />`
+- Fichier : `/app/frontend/src/components/ruche/RucheSavings.jsx`
+- Affiché dans `RucheMonitor.jsx` (/ruche) juste après le header
+- Sélecteur fenêtre 7j / 30j / 90j
+- 4 KPIs : Requêtes, Tokens économisés, Ratio économies (vert %), Coût évité (jaune $)
+- Barres de progression par abeille (répartition Qwen)
+- États : loading, empty (0 requêtes), data
+- `data-testid` : `ruche-savings`, `savings-window-{7,30,90}`, `savings-bee-{role}`
+
+### Nettoyage code mort
+- Supprimé un bloc orphelin dans `/api/webhook/stripe` (lignes mortes après `return {"ok":True}` → `F821 Undefined name` détecté par ruff).
+
+### Validation live
+- 3 requêtes gemmaChat → 2400 tok réels vs 6000 baseline → **60% d'économies** (3600 tok sauvés, $0.0108).
+- UI rendue avec toutes les KPIs et barre Mistral Large.
+- Validation edge cases : `days=9999` clamp à 365, sans auth → 401, 0 requête → message invitant à utiliser une abeille.
+

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import RucheSavings from '@/components/ruche/RucheSavings'
 
 const BACKEND =
   import.meta.env.REACT_APP_BACKEND_URL ||
@@ -153,6 +154,9 @@ export default function RucheMonitor() {
           {err}
         </div>
       )}
+
+      {/* Token Savings */}
+      <RucheSavings />
 
       {/* Bees grid */}
       {loading && !data ? (
