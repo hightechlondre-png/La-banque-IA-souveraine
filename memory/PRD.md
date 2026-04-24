@@ -385,3 +385,37 @@ Augmenter la visibilité des économies : au lieu d'aller sur `/ruche`, l'utilis
 ### Boucle rétention complète
 `Dashboard home` (widget saillant) → `clic` → `/ruche` (détails + Token Savings full) → `confidence user = +1` chaque jour.
 
+---
+
+## 2026-04-24 · Phase 13 — Preuve Sociale Collective ✅
+
+### Objectif
+Transformer la page publique `/la-ruche` en outil de conversion : afficher des statistiques collectives anonymisées de tous les utilisateurs pour créer un effet **social proof** ("des gens utilisent réellement, et économisent").
+
+### Nouveau endpoint `GET /api/public/ruche/stats` (no auth)
+- Cache 60s (`_PUBLIC_RUCHE_STATS_TTL`) pour encaisser le trafic viral
+- Aucune PII exposée — uniquement counts agrégés
+- Agrégation MongoDB multi-pipelines : total all-time, this_week, by_bee_30d top-10
+- Retour :
+  ```json
+  {
+    "all_time": {"total_requests": 63, "tokens_saved": 74800, "savings_ratio": 0.5937, "cost_saved_usd": 0.2244, "unique_users": 1},
+    "this_week": {"requests": 42, "tokens": 34600},
+    "by_bee_30d": [{"bee_label": "Mistral Large", "count": 21}, ...]
+  }
+  ```
+
+### Nouveau composant `<PublicRucheStats />`
+- Fichier : `/app/frontend/src/components/ruche/PublicRucheStats.jsx`
+- Intégré dans `/la-ruche` entre la grid des abeilles et la démo Qwen
+- **3 big stats saillants** colorés (tokens économisés vert, requêtes bleu, coût évité jaune) avec format `fmt()` (k/M shorthand)
+- **Trophée social proof** : "🏆 Ce mois, {label} a traité X requêtes — l'abeille la plus sollicitée"
+- **Répartition top-10** avec barres de progression (première en primary, autres en primary/40)
+- **Auto-hide** si aucune donnée (`total_requests === 0`) — pas de section vide
+- `data-testid` : `public-ruche-stats`, `stat-bee-{i}`
+
+### Impact
+- La page `/la-ruche` passe d'une simple démo à une **page de conversion** avec chiffres réels.
+- L'utilisateur qui visite voit **3 preuves** (74.8k tokens, 63 req, $0.22 évité) avant même de tester le widget Qwen.
+- Auto-update toutes les 60s (cache server-side), pas besoin de refresh côté client.
+

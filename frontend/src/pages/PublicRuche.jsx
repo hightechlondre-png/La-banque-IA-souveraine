@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import SmartRouteWidget from '@/components/ruche/SmartRouteWidget'
+import PublicRucheStats from '@/components/ruche/PublicRucheStats'
 
 const BACKEND =
   import.meta.env.REACT_APP_BACKEND_URL ||
@@ -272,6 +273,9 @@ export default function PublicRuche() {
           </div>
         )}
       </section>
+
+      {/* Public stats — preuve sociale collective */}
+      <PublicRucheStats />
 
       {/* Demo widget */}
       <section id="demo" className="relative z-10 max-w-6xl mx-auto px-6 py-10 scroll-mt-8">

@@ -2270,6 +2270,91 @@ async def public_ruche_smart_route(body: PublicRucheRouteBody, request: Request)
     }
 
 
+_PUBLIC_RUCHE_STATS_CACHE: Dict[str, Any] = {"ts": 0, "payload": None}
+_PUBLIC_RUCHE_STATS_TTL = 60
+
+
+@api.get("/public/ruche/stats")
+async def public_ruche_stats():
+    """Stats collectives anonymisées — aucune PII exposée. Preuve sociale."""
+    now = _time.time()
+    cached = _PUBLIC_RUCHE_STATS_CACHE
+    if cached["payload"] and (now - cached["ts"]) < _PUBLIC_RUCHE_STATS_TTL:
+        return cached["payload"]
+
+    from datetime import timedelta
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    month_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+
+    # Stats all-time + cette semaine + unique users (anonymisé = juste le count)
+    pipeline_total = [
+        {"$group": {
+            "_id": None,
+            "total_requests": {"$sum": 1},
+            "total_tokens": {"$sum": "$tokens_budget"},
+            "unique_users": {"$addToSet": "$user_id"},
+        }},
+    ]
+    totals = {"total_requests": 0, "total_tokens": 0, "unique_users": 0}
+    async for row in db.ruche_usage.aggregate(pipeline_total):
+        totals["total_requests"] = row["total_requests"]
+        totals["total_tokens"] = int(row["total_tokens"] or 0)
+        # Filter out None user_ids
+        totals["unique_users"] = len([u for u in (row.get("unique_users") or []) if u])
+
+    # By bee (this month, top N)
+    pipeline_bee = [
+        {"$match": {"created_at": {"$gte": month_ago}}},
+        {"$group": {
+            "_id": "$bee_role",
+            "count": {"$sum": 1},
+            "bee_label": {"$last": "$bee_label"},
+        }},
+        {"$sort": {"count": -1}},
+        {"$limit": 10},
+    ]
+    by_bee: List[Dict[str, Any]] = []
+    async for row in db.ruche_usage.aggregate(pipeline_bee):
+        by_bee.append({
+            "bee_label": row.get("bee_label") or row["_id"],
+            "count": row["count"],
+        })
+
+    # This week snapshot
+    pipeline_week = [
+        {"$match": {"created_at": {"$gte": week_ago}}},
+        {"$group": {
+            "_id": None,
+            "requests": {"$sum": 1},
+            "tokens": {"$sum": "$tokens_budget"},
+        }},
+    ]
+    week = {"requests": 0, "tokens": 0}
+    async for row in db.ruche_usage.aggregate(pipeline_week):
+        week["requests"] = row["requests"]
+        week["tokens"] = int(row["tokens"] or 0)
+
+    baseline_tokens = totals["total_requests"] * _BASELINE_TOKENS_PER_REQ
+    tokens_saved = max(0, baseline_tokens - totals["total_tokens"])
+    savings_ratio = (tokens_saved / baseline_tokens) if baseline_tokens > 0 else 0.0
+    cost_saved = round(tokens_saved / 1000 * _COST_PER_1K_TOKENS_USD, 4)
+
+    payload = {
+        "all_time": {
+            "total_requests": totals["total_requests"],
+            "tokens_saved": tokens_saved,
+            "savings_ratio": round(savings_ratio, 4),
+            "cost_saved_usd": cost_saved,
+            "unique_users": totals["unique_users"],
+        },
+        "this_week": week,
+        "by_bee_30d": by_bee,
+        "ts": now_iso(),
+    }
+    _PUBLIC_RUCHE_STATS_CACHE.update({"ts": now, "payload": payload})
+    return payload
+
+
 @api.get("/public/ruche/card.svg")
 async def public_ruche_social_card():
     """Carte sociale Twitter/LinkedIn/OpenGraph pour La Ruche.
