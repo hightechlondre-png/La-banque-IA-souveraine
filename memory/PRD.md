@@ -419,3 +419,40 @@ Transformer la page publique `/la-ruche` en outil de conversion : afficher des s
 - L'utilisateur qui visite voit **3 preuves** (74.8k tokens, 63 req, $0.22 évité) avant même de tester le widget Qwen.
 - Auto-update toutes les 60s (cache server-side), pas besoin de refresh côté client.
 
+---
+
+## 2026-04-24 · Phase 13.5 — Live Activity Ticker ✅
+
+### Objectif
+Renforcer l'effet "plateforme vivante" en affichant les nouvelles activités de la Ruche en temps réel sous forme de pop-up flottant bottom-right (à la Stripe / Webflow).
+
+### Nouveau endpoint `GET /api/public/ruche/recent?limit=N` (no auth)
+- Cache 12s pour effet "live" mais limité (`_PUBLIC_RUCHE_RECENT_TTL`)
+- Retourne les N derniers items (1-25, default 10) anonymisés : `{bee_label, usecase, created_at}` uniquement
+- Aucune PII (pas de user_id, pas de contenu, pas de tokens individuel)
+
+### Nouveau composant `<LiveActivityTicker />`
+- Fichier : `/app/frontend/src/components/ruche/LiveActivityTicker.jsx`
+- **Polling toutes les 18s** (intervalle), avec dedup via Set des `created_at` déjà vus
+- **Au mount** : affiche le dernier item connu comme "preuve sociale immédiate" (sinon le visiteur voit rien pendant 18s)
+- **Pop-up** bottom-right (max-w 330px) avec :
+  - Avatar Sparkles + petit dot vert clignotant (`animate-ping`)
+  - Label "🔵 ROUTAGE QWEN · LIVE" en mono primary
+  - Texte : "**{bee_label}** a traité un **{usecase_humanized}**"
+  - Time relatif : "il y a Xs/Xmin/Xh"
+  - Auto-dismiss après 5s + queue avec gap 800ms entre items
+- Translation usecase code → label FR (cognitive_chat → "chat cognitif", contract_audit → "audit smart-contract", etc.)
+- `data-testid` : `live-activity-ticker`
+- **Animation entrée** : Tailwind `animate-in slide-in-from-bottom-4 fade-in-0`
+
+### Intégration globale
+- Rendu sur `/la-ruche` (page publique)
+- Rendu sur `/` (Landing page) — visiteurs hors-funnel exposés à la preuve sociale
+- Pas d'impact si aucune activité (component retourne `null`)
+
+### Validation live
+- Premier mount : afficher `Mistral Large a traité un chat cognitif · il y a 1min` ✓
+- Pop-up rendu en bas à droite avec dot vert + glow primary ✓
+- Auto-dismiss 5s, queue 800ms gap ✓
+- Aucune PII fuite côté API ✓
+

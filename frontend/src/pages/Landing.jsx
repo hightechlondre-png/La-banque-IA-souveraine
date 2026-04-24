@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import SmartRouteWidget from '@/components/ruche/SmartRouteWidget'
+import LiveActivityTicker from '@/components/ruche/LiveActivityTicker'
 
 const FEATURES = [
   {
@@ -73,6 +74,8 @@ export default function Landing() {
       data-testid="landing-page"
       className="min-h-screen bg-background text-foreground relative overflow-x-hidden"
     >
+      <LiveActivityTicker />
+
       {/* Grid background */}
       <div
         className="fixed inset-0 opacity-[0.04] pointer-events-none"

@@ -2272,6 +2272,33 @@ async def public_ruche_smart_route(body: PublicRucheRouteBody, request: Request)
 
 _PUBLIC_RUCHE_STATS_CACHE: Dict[str, Any] = {"ts": 0, "payload": None}
 _PUBLIC_RUCHE_STATS_TTL = 60
+_PUBLIC_RUCHE_RECENT_CACHE: Dict[str, Any] = {"ts": 0, "payload": None}
+_PUBLIC_RUCHE_RECENT_TTL = 12  # short pour effet "live"
+
+
+@api.get("/public/ruche/recent")
+async def public_ruche_recent(limit: int = 10):
+    """Activité récente anonymisée pour ticker live. Pas de PII (pas de user_id, pas de contenu)."""
+    limit = max(1, min(int(limit or 10), 25))
+    now = _time.time()
+    cached = _PUBLIC_RUCHE_RECENT_CACHE
+    if cached["payload"] and (now - cached["ts"]) < _PUBLIC_RUCHE_RECENT_TTL:
+        return cached["payload"]
+
+    items: List[Dict[str, Any]] = []
+    cursor = db.ruche_usage.find(
+        {},
+        {"_id": 0, "bee_label": 1, "usecase": 1, "created_at": 1},
+    ).sort("created_at", -1).limit(limit)
+    async for d in cursor:
+        items.append({
+            "bee_label": d.get("bee_label"),
+            "usecase": d.get("usecase"),
+            "created_at": d.get("created_at"),
+        })
+    payload = {"items": items, "ts": now_iso()}
+    _PUBLIC_RUCHE_RECENT_CACHE.update({"ts": now, "payload": payload})
+    return payload
 
 
 @api.get("/public/ruche/stats")

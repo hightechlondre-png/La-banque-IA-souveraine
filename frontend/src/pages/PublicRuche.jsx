@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import SmartRouteWidget from '@/components/ruche/SmartRouteWidget'
 import PublicRucheStats from '@/components/ruche/PublicRucheStats'
+import LiveActivityTicker from '@/components/ruche/LiveActivityTicker'
 
 const BACKEND =
   import.meta.env.REACT_APP_BACKEND_URL ||
@@ -95,6 +96,7 @@ export default function PublicRuche() {
 
   return (
     <div data-testid="public-ruche-page" className="min-h-screen bg-background text-foreground relative overflow-x-hidden">
+      <LiveActivityTicker />
       {/* Background flourishes */}
       <div className="fixed inset-0 opacity-[0.04] pointer-events-none" style={{
         backgroundImage: 'linear-gradient(rgba(96,165,250,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(96,165,250,0.4) 1px, transparent 1px)',
