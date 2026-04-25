@@ -456,3 +456,39 @@ Renforcer l'effet "plateforme vivante" en affichant les nouvelles activités de 
 - Auto-dismiss 5s, queue 800ms gap ✓
 - Aucune PII fuite côté API ✓
 
+---
+
+## 2026-04-25 · Phase 14 — Onboarding Tour Interactif ✅
+
+### Objectif
+Maximiser l'activation post-signup en présentant les 3 idées-clés d'AEGIS-Q en moins de 60 secondes, avec un design soigné et une UX non-intrusive (skippable, persistante).
+
+### Backend
+- **`PATCH /api/auth/onboarding`** — accepte `{step?: int, completed?: bool}`, met à jour `users.{onboarding_step, onboarding_completed, onboarding_completed_at}` via `$set`. Validation 400 si body vide.
+- `step` clampé 0-10 (défense en profondeur), `completed` toggle bool.
+
+### Composant `<OnboardingTour />`
+- Fichier : `/app/frontend/src/components/onboarding/OnboardingTour.jsx`
+- 3 étapes scénarisées en français :
+  1. **🐝 Bienvenue dans la Ruche** — pitch fédération 9 IA + Qwen <3s
+  2. **⚡ Teste ta première abeille** — exemples concrets (Mistral/Llama 4/DeepSeek), CTA "Ouvrir le chat cognitif"
+  3. **💎 Suis tes économies en temps réel** — pitch ~60% économies + CTA "Voir ma Dashboard" + bouton final "Activer la Ruche" avec icône Crown
+- Modal centré avec backdrop blur, glow primary+accent, barre de progression top, step dots animés (premier large, autres petits)
+- **Persistance** : chaque clic Next sauvegarde `step` côté serveur. Le X et "Passer le tour" appellent `completed=true`.
+- **Reprise** : si l'utilisateur ferme le browser à mi-tour, reprise au dernier `onboarding_step` connu.
+- **Skip multi-modal** : bouton X (top-right), texte "Passer le tour" (bottom-left), clic backdrop, tous équivalent à `completed=true`.
+- Animations : fade-in 200ms, scale 95→100 + translate-y, bouton final avec Crown+Check pour climax visuel.
+- `data-testid` : `onboarding-tour`, `onboarding-card`, `onboarding-skip-btn`, `onboarding-skip-text-btn`, `onboarding-next-btn`, `onboarding-cta-btn`
+
+### Intégration
+- Ajouté dans `AppLayout.jsx` (entoure toutes les pages authenticated)
+- Fetch `/api/auth/me` au mount du layout, passe `user` au `OnboardingTour`
+- Auto-hide si `user.onboarding_completed === true`
+- Pas de réapparition sur navigation interne (state synchronisé via callback `onComplete`)
+
+### Validation
+- Step 1 → Step 2 → Step 3 testés : titres, body, CTAs, step dots animés ✓
+- Bouton final "Activer la Ruche" affiche Crown + Check ✓
+- Backend : PATCH step=1 → 200, PATCH completed=true → 200, PATCH {} → 400 ✓
+- Reset user pour replay : `db.users.update({email}, {$unset: {onboarding_*}})` ✓
+

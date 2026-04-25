@@ -335,6 +335,25 @@ async def logout(user: Dict[str, Any] = Depends(get_current_user)):
     return {"ok": True}
 
 
+@api.patch("/auth/onboarding")
+async def update_onboarding(
+    body: Dict[str, Any],
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Met à jour l'état d'onboarding du user (step number ou completed flag)."""
+    update = {}
+    if "step" in body:
+        update["onboarding_step"] = max(0, min(int(body["step"] or 0), 10))
+    if "completed" in body:
+        update["onboarding_completed"] = bool(body["completed"])
+        if update["onboarding_completed"]:
+            update["onboarding_completed_at"] = now_iso()
+    if not update:
+        raise HTTPException(status_code=400, detail="step or completed required")
+    await db.users.update_one({"id": user["id"]}, {"$set": update})
+    return {"ok": True, **update}
+
+
 # ---------------------------------------------------------------------------
 # Entity CRUD
 # ---------------------------------------------------------------------------
