@@ -106,7 +106,7 @@ export default function LiveActivityTicker() {
     <div
       data-testid="live-activity-ticker"
       className={cn(
-        'fixed bottom-5 right-5 z-50 max-w-[330px]',
+        'fixed bottom-5 left-5 z-40 max-w-[330px]',
         'animate-in slide-in-from-bottom-4 fade-in-0 duration-300',
       )}
     >

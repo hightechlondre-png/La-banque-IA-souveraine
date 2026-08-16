@@ -1,0 +1,39 @@
+{
+  "verdict": "fixed",
+  "user_reported_bug": "probleme de cadrage de l'interface en vois pas bien le memu en haut et regle le dashboard",
+  "summary": "No relevant testing skill found. Focused UI retest on local preview /dashboard with demo@aegis-q.mil: TopBar is visible/sticky at 1440x900 and 1280x800, search and AEGIS MILITARY — LIVE badge are visible, user menu opens, dashboard savings shows 82 500 tokens / 70 req with green sparkline, SimulationPanel is a 36x36 top-right FAB at y=80 with 0px vertical overlap with MarketPulse and opens to a 256px panel. LiveActivityTicker is bottom-left at left=20px bottom=20px z-index=40. Also passed 1024x768 edge check.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/tests/bug_verify_dashboard_ui_iter12.py",
+    "/app/test_reports/bug_verify_dashboard_ui_iter12_results.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "No relevant testing skill found. /app/memory/test_credentials.md was not present; used credentials supplied in the review request.",
+    "Code inspection confirmed TopBar uses sticky top-0 z-30, SimulationPanel collapsed defaults to fixed top-20 right-4 z-30 h-9 w-9, Dashboard keeps max-w-7xl mx-auto pb-24, and LiveActivityTicker uses bottom-5 left-5 z-40. Runtime UI matched these expectations.",
+    "Console log contained only Vite HMR websocket errors on localhost and React Router future warnings; no user-visible dashboard framing failure was observed. Direct python execution of the saved Playwright script is blocked by missing python playwright package, so the same flow was executed with the browser automation harness."
+  ],
+  "updated_files": [
+    "/app/tests/bug_verify_dashboard_ui_iter12.py",
+    "/app/test_reports/bug_verify_dashboard_ui_iter12_results.json",
+    "/app/test_reports/bug_verification_12.json",
+    "/app/test_reports/iteration_12.json"
+  ],
+  "success_rate": {
+    "backend": "N/A (frontend-only)",
+    "frontend": "100%"
+  },
+  "seed_data_creation": "None. Used existing demo credentials and existing seeded Ruche data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Focused retest completed with browser automation at http://localhost:3000. Key measurements: SimulationPanel collapsed rect 1440={left:1388,top:80,width:36,height:36}, MarketPulse top=502, overlap height=0; 1280={left:1228,top:80,width:36,height:36}, MarketPulse top=502, overlap height=0. Savings text: 82 500 tokens, 70 req, 59%, $0.2475. Ticker: left=20px bottom=20px zIndex=40.",
+  "rca_of_the_issue": "The previous overlap was caused by the collapsed SimulationPanel occupying a bottom-right area over MarketPulse. The current fix moves the collapsed state to a small top-right FAB under the TopBar, eliminating vertical overlap while preserving click-to-open behavior."
+}

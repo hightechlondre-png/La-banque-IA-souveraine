@@ -73,7 +73,7 @@ export default function SimulationPanel() {
   const [running, setRunning] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [count, setCount] = useState(0);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const intervalRef = useRef(null);
   const busyRef = useRef(false);
 
@@ -116,8 +116,30 @@ export default function SimulationPanel() {
     }
   };
 
+  // When collapsed → render minimal circular FAB in a safe zone (top-right, just under TopBar)
+  if (collapsed) {
+    return (
+      <button
+        data-testid="simulation-panel"
+        onClick={() => setCollapsed(false)}
+        title="Ouvrir la simulation"
+        className="fixed top-20 right-4 z-30 h-9 w-9 rounded-full bg-card border border-primary/30 shadow-lg flex items-center justify-center hover:border-primary/60 hover:bg-secondary/50 transition-colors"
+      >
+        <div className="relative">
+          <Zap className={cn("h-3.5 w-3.5", running ? "text-green-400" : "text-muted-foreground")} />
+          {running && (
+            <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+          )}
+        </div>
+      </button>
+    )
+  }
+
   return (
-    <div className="fixed bottom-5 right-5 z-50 w-64 bg-card border border-primary/30 rounded-2xl shadow-2xl overflow-hidden">
+    <div
+      data-testid="simulation-panel"
+      className="fixed bottom-5 right-5 z-40 w-64 bg-card border border-primary/30 rounded-2xl shadow-2xl overflow-hidden"
+    >
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-secondary/30 transition-colors"
@@ -140,7 +162,7 @@ export default function SimulationPanel() {
         <div className="px-4 pb-4 space-y-3 border-t border-border">
           {/* Speed selector */}
           <div className="pt-3">
-            <p className="text-[10px] text-muted-foreground mb-1.5 uppercase tracking-wide">Vitesse d'injection</p>
+            <p className="text-[10px] text-muted-foreground mb-1.5 uppercase tracking-wide">Vitesse d&apos;injection</p>
             <div className="flex gap-1.5">
               {SPEEDS.map((s, i) => (
                 <button key={s.label} onClick={() => setSpeed(i)} disabled={running}

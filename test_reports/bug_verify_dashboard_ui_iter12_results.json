@@ -1,0 +1,771 @@
+{
+  "steps": [
+    {
+      "name": "Login demo user",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "1440x900 TopBar sticky/search/badge/user-menu",
+      "ok": true,
+      "detail": {
+        "topbar": {
+          "visible": true,
+          "position": "sticky",
+          "top": "0px",
+          "zIndex": "30",
+          "rect": {
+            "left": 240,
+            "top": 0,
+            "right": 1440,
+            "bottom": 64,
+            "width": 1200,
+            "height": 64
+          }
+        },
+        "badge": {
+          "visible": true,
+          "text": "AEGIS-QMILITARY FINANCEDashboardTokenomicsStakingGouvernanceWalletSécuritéAUDIT-DSSentinelN-MEM-AN-MEM-BFractal EngineGraphe N-MEM-BAudit TrailRapports AnalytiquesGouvernance MonétaireIntel StratégiqueAudit SécuritéSimulation 3DPrédictif 24hRapport ExécutifAttaques QuantiquesConformité Temps RéelStress Test RéseauMaintenance PrédictiveFlux IoT Temps RéelRessources ClustersToken Listing GuideDAO GouvernanceAudit Smart ContractsZero-Knowledge ProofsAudit IA ContratsFourniture LiquiditéBridge Cross-ChainAnalytics AvancéesAnalytics UtilisateurScanner Sécurité IACognitive AI · GemmaDashboard AQ PerfsHistorique TransactionsAlertes Telegram AQOrchestrateur Agents IARéseau Agents AutonomesGestionnaire de SkillsBase de Connaissances RAGRapports Performance IAPlaquette SaaSMonitoring Temps RéelAEGIS MILITARY — LIVE6DODemo OperatoradminDashboardAEGIS-Q — Banque IA Souveraine+2.0%Total Supply100MAQ+12.4%Capitalisation$847M+3.2%Holders24,871+1.8%Staked38.7%Token Savings · 30j82 500Tokens économisés70 req·59% économisé·$0.2475 évitéSupply — Inflation Contrôlée IA+2.0% / ANFévMarAvrMaiJunJulAoûSepOctNovDécMarket Pulse · Temps RéelCoinGecko · rafraîchissement 30sLIVEAegis Token · AQ$2.3868-0.20%Panier synthétique · 50% BTC · 30% ETH · 20% SOLBTCBitcoinBTC · USD$62,999-0.07%ETHEthereumETH · USD$1,880.03-0.09%SOLSolanaSOL · USD$74.96-0.68%Répartition AEGIS-QÉcosystème Jeu40%Réserve IA20%Investisseurs15%Staking10%Sécurité & Audit10%Fondation5%Résonance Temps RéelÉvolution historique des nœuds actifs — mise à jour automatiqueLIVE21:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:470%25%50%75%100%Siège MilitaireTrahison CapitaineÉpidémie ViraleMutation BiologiquePacte CommercialRévolte PopulaireTransactions RécentesStaking Reward0x7a3f...9e2d+50,000 AQ2 minMarketplace0x4b1c...8f3a-12,500 AQ15 minInvestisseur0x9d5e...1c7b+200,000 AQ1hAchat In-Game0x2f8a...6d4e-5,000 AQ3hLocation IA0x6c2d...3a9f+75,000 AQ5hAEGIS Chain — RéseauBlocs1,847,293TPS12,400Nœuds48Uptime99.99%Architecture AEGIS NetworkAEGIS ChainBlockchain PrivéeAEGIS-Q Token1B SupplyAUDIT-DSIA FinancièreWallet AEGISSouverainSécuritéNiveau BanqueGouvernanceDAO"
+        },
+        "search": {
+          "visible": true,
+          "rect": {
+            "left": 264,
+            "top": 13.5,
+            "right": 584,
+            "bottom": 49.5,
+            "width": 320,
+            "height": 36
+          },
+          "placeholder": "Rechercher..."
+        },
+        "userMenuClick": {
+          "opened": true,
+          "visible": true,
+          "text": "demo@aegis-q.mil\n\nID · ED3FC639\n\nProfil opérateur\nSe déconnecter",
+          "rect": {
+            "left": 1160,
+            "top": 57.5,
+            "right": 1416,
+            "bottom": 189.5,
+            "width": 256,
+            "height": 132
+          }
+        }
+      }
+    },
+    {
+      "name": "1440x900 RucheSavings non-zero green sparkline",
+      "ok": true,
+      "detail": {
+        "savings": {
+          "visible": true,
+          "text": "TOKEN SAVINGS · 30J\n\n82 500\n\nTOKENS ÉCONOMISÉS\n\n70 req\n·\n59% économisé\n·\n$0.2475 évité",
+          "firstNumber": 30,
+          "empty": false
+        },
+        "sparkline": {
+          "visible": true,
+          "stroke": "#10b981",
+          "points": "0.0,0.0 12.3,25.4 24.6,20.0 36.9,28.8 49.2,10.4 61.5,15.8 73.8,7.9 86.2,7.5 98.5,11.7 110.8,18.3 123.1,29.6 135.4,5.4 147.7,4.6 160.0,30.8"
+        }
+      }
+    },
+    {
+      "name": "1440x900 Simulation FAB top-right no MarketPulse overlap and opens",
+      "ok": true,
+      "detail": {
+        "collapsed": {
+          "visible": true,
+          "tag": "BUTTON",
+          "title": "Ouvrir la simulation",
+          "text": "",
+          "position": "fixed",
+          "top": "80px",
+          "right": "16px",
+          "zIndex": "30",
+          "rect": {
+            "left": 1388,
+            "top": 80,
+            "right": 1424,
+            "bottom": 116,
+            "width": 36,
+            "height": 36
+          },
+          "collapsed": true,
+          "overlapMarket": {
+            "overlap": false,
+            "area": 0,
+            "width": 28,
+            "height": 0
+          }
+        },
+        "opened": {
+          "tag": "DIV",
+          "width": 256,
+          "height": 277,
+          "text": "Mode Simulation\n\nVITESSE D'INJECTION\n\nLent\nNormal\nRapide\n\n● MemoryNode aléatoire (résonance 0.1→1.0)\n\n● AuditEvent (PRUNE / RESONANCE / TIER)\n\n→ Déclenche alertes si résonance > 90%\n\nDémarrer\n×1",
+          "position": "fixed",
+          "zIndex": "40",
+          "rect": {
+            "left": 1164,
+            "top": 603,
+            "right": 1420,
+            "bottom": 880,
+            "width": 256,
+            "height": 277
+          }
+        }
+      }
+    },
+    {
+      "name": "1280x800 TopBar sticky/search/badge/user-menu",
+      "ok": true,
+      "detail": {
+        "topbar": {
+          "visible": true,
+          "position": "sticky",
+          "top": "0px",
+          "zIndex": "30",
+          "rect": {
+            "left": 240,
+            "top": 0,
+            "right": 1280,
+            "bottom": 64,
+            "width": 1040,
+            "height": 64
+          }
+        },
+        "badge": {
+          "visible": true,
+          "text": "AEGIS-QMILITARY FINANCEDashboardTokenomicsStakingGouvernanceWalletSécuritéAUDIT-DSSentinelN-MEM-AN-MEM-BFractal EngineGraphe N-MEM-BAudit TrailRapports AnalytiquesGouvernance MonétaireIntel StratégiqueAudit SécuritéSimulation 3DPrédictif 24hRapport ExécutifAttaques QuantiquesConformité Temps RéelStress Test RéseauMaintenance PrédictiveFlux IoT Temps RéelRessources ClustersToken Listing GuideDAO GouvernanceAudit Smart ContractsZero-Knowledge ProofsAudit IA ContratsFourniture LiquiditéBridge Cross-ChainAnalytics AvancéesAnalytics UtilisateurScanner Sécurité IACognitive AI · GemmaDashboard AQ PerfsHistorique TransactionsAlertes Telegram AQOrchestrateur Agents IARéseau Agents AutonomesGestionnaire de SkillsBase de Connaissances RAGRapports Performance IAPlaquette SaaSMonitoring Temps RéelAEGIS MILITARY — LIVE6DODemo OperatoradminDashboardAEGIS-Q — Banque IA Souveraine+2.0%Total Supply100MAQ+12.4%Capitalisation$847M+3.2%Holders24,871+1.8%Staked38.7%Token Savings · 30j82 500Tokens économisés70 req·59% économisé·$0.2475 évitéSupply — Inflation Contrôlée IA+2.0% / ANFévMarAvrMaiJunJulAoûSepOctNovDécMarket Pulse · Temps RéelCoinGecko · rafraîchissement 30sLIVEAegis Token · AQ$2.3868-0.20%Panier synthétique · 50% BTC · 30% ETH · 20% SOLBTCBitcoinBTC · USD$62,999-0.07%ETHEthereumETH · USD$1,880.03-0.09%SOLSolanaSOL · USD$74.96-0.68%Répartition AEGIS-QÉcosystème Jeu40%Réserve IA20%Investisseurs15%Staking10%Sécurité & Audit10%Fondation5%Résonance Temps RéelÉvolution historique des nœuds actifs — mise à jour automatiqueLIVE21:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:470%25%50%75%100%Siège MilitaireTrahison CapitaineÉpidémie ViraleMutation BiologiquePacte CommercialRévolte PopulaireTransactions RécentesStaking Reward0x7a3f...9e2d+50,000 AQ2 minMarketplace0x4b1c...8f3a-12,500 AQ15 minInvestisseur0x9d5e...1c7b+200,000 AQ1hAchat In-Game0x2f8a...6d4e-5,000 AQ3hLocation IA0x6c2d...3a9f+75,000 AQ5hAEGIS Chain — RéseauBlocs1,847,293TPS12,400Nœuds48Uptime99.99%Architecture AEGIS NetworkAEGIS ChainBlockchain PrivéeAEGIS-Q Token1B SupplyAUDIT-DSIA FinancièreWallet AEGISSouverainSécuritéNiveau BanqueGouvernanceDAO"
+        },
+        "search": {
+          "visible": true,
+          "rect": {
+            "left": 264,
+            "top": 13.5,
+            "right": 584,
+            "bottom": 49.5,
+            "width": 320,
+            "height": 36
+          },
+          "placeholder": "Rechercher..."
+        },
+        "userMenuClick": {
+          "opened": true,
+          "visible": true,
+          "text": "demo@aegis-q.mil\n\nID · ED3FC639\n\nProfil opérateur\nSe déconnecter",
+          "rect": {
+            "left": 1000,
+            "top": 57.5,
+            "right": 1256,
+            "bottom": 189.5,
+            "width": 256,
+            "height": 132
+          }
+        }
+      }
+    },
+    {
+      "name": "1280x800 RucheSavings non-zero green sparkline",
+      "ok": true,
+      "detail": {
+        "savings": {
+          "visible": true,
+          "text": "TOKEN SAVINGS · 30J\n\n82 500\n\nTOKENS ÉCONOMISÉS\n\n70 req\n·\n59% économisé\n·\n$0.2475 évité",
+          "firstNumber": 30,
+          "empty": false
+        },
+        "sparkline": {
+          "visible": true,
+          "stroke": "#10b981",
+          "points": "0.0,0.0 12.3,25.4 24.6,20.0 36.9,28.8 49.2,10.4 61.5,15.8 73.8,7.9 86.2,7.5 98.5,11.7 110.8,18.3 123.1,29.6 135.4,5.4 147.7,4.6 160.0,30.8"
+        }
+      }
+    },
+    {
+      "name": "1280x800 Simulation FAB top-right no MarketPulse overlap and opens",
+      "ok": true,
+      "detail": {
+        "collapsed": {
+          "visible": true,
+          "tag": "BUTTON",
+          "title": "Ouvrir la simulation",
+          "text": "",
+          "position": "fixed",
+          "top": "80px",
+          "right": "16px",
+          "zIndex": "30",
+          "rect": {
+            "left": 1228,
+            "top": 80,
+            "right": 1264,
+            "bottom": 116,
+            "width": 36,
+            "height": 36
+          },
+          "collapsed": true,
+          "overlapMarket": {
+            "overlap": false,
+            "area": 0,
+            "width": 28,
+            "height": 0
+          }
+        },
+        "opened": {
+          "tag": "DIV",
+          "width": 256,
+          "height": 277,
+          "text": "Mode Simulation\n\nVITESSE D'INJECTION\n\nLent\nNormal\nRapide\n\n● MemoryNode aléatoire (résonance 0.1→1.0)\n\n● AuditEvent (PRUNE / RESONANCE / TIER)\n\n→ Déclenche alertes si résonance > 90%\n\nDémarrer\n×1",
+          "position": "fixed",
+          "zIndex": "40",
+          "rect": {
+            "left": 1004,
+            "top": 503,
+            "right": 1260,
+            "bottom": 780,
+            "width": 256,
+            "height": 277
+          }
+        }
+      }
+    },
+    {
+      "name": "1024x768_edge TopBar sticky/search/badge/user-menu",
+      "ok": true,
+      "detail": {
+        "topbar": {
+          "visible": true,
+          "position": "sticky",
+          "top": "0px",
+          "zIndex": "30",
+          "rect": {
+            "left": 240,
+            "top": 0,
+            "right": 1024,
+            "bottom": 64,
+            "width": 784,
+            "height": 64
+          }
+        },
+        "badge": {
+          "visible": true,
+          "text": "AEGIS-QMILITARY FINANCEDashboardTokenomicsStakingGouvernanceWalletSécuritéAUDIT-DSSentinelN-MEM-AN-MEM-BFractal EngineGraphe N-MEM-BAudit TrailRapports AnalytiquesGouvernance MonétaireIntel StratégiqueAudit SécuritéSimulation 3DPrédictif 24hRapport ExécutifAttaques QuantiquesConformité Temps RéelStress Test RéseauMaintenance PrédictiveFlux IoT Temps RéelRessources ClustersToken Listing GuideDAO GouvernanceAudit Smart ContractsZero-Knowledge ProofsAudit IA ContratsFourniture LiquiditéBridge Cross-ChainAnalytics AvancéesAnalytics UtilisateurScanner Sécurité IACognitive AI · GemmaDashboard AQ PerfsHistorique TransactionsAlertes Telegram AQOrchestrateur Agents IARéseau Agents AutonomesGestionnaire de SkillsBase de Connaissances RAGRapports Performance IAPlaquette SaaSMonitoring Temps RéelAEGIS MILITARY — LIVE7StakingRécompenses distribuées+2,680 AQ crédités sur votre stake Gold. APY effectif : 45.2% cette semaine.DODemo OperatoradminDashboardAEGIS-Q — Banque IA Souveraine+2.0%Total Supply100MAQ+12.4%Capitalisation$847M+3.2%Holders24,871+1.8%Staked38.7%Token Savings · 30j82 500Tokens économisés70 req·59% économisé·$0.2475 évitéSupply — Inflation Contrôlée IA+2.0% / ANFévMarAvrMaiJunJulAoûSepOctNovDécMarket Pulse · Temps RéelCoinGecko · rafraîchissement 30sLIVEAegis Token · AQ$2.3868-0.20%Panier synthétique · 50% BTC · 30% ETH · 20% SOLBTCBitcoinBTC · USD$62,999-0.07%ETHEthereumETH · USD$1,880.03-0.09%SOLSolanaSOL · USD$74.96-0.68%Répartition AEGIS-QÉcosystème Jeu40%Réserve IA20%Investisseurs15%Staking10%Sécurité & Audit10%Fondation5%Résonance Temps RéelÉvolution historique des nœuds actifs — mise à jour automatiqueLIVE21:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:470%25%50%75%100%Siège MilitaireTrahison CapitaineÉpidémie ViraleMutation BiologiquePacte CommercialRévolte PopulaireTransactions RécentesStaking Reward0x7a3f...9e2d+50,000 AQ2 minMarketplace0x4b1c...8f3a-12,500 AQ15 minInvestisseur0x9d5e...1c7b+200,000 AQ1hAchat In-Game0x2f8a...6d4e-5,000 AQ3hLocation IA0x6c2d...3a9f+75,000 AQ5hAEGIS Chain — RéseauBlocs1,847,293TPS12,400Nœuds48Uptime99.99%Architecture AEGIS NetworkAEGIS ChainBlockchain PrivéeAEGIS-Q Token1B SupplyAUDIT-DSIA FinancièreWallet AEGISSouverainSécuritéNiveau BanqueGouvernanceDAO"
+        },
+        "search": {
+          "visible": true,
+          "rect": {
+            "left": 264,
+            "top": 13.5,
+            "right": 584,
+            "bottom": 49.5,
+            "width": 320,
+            "height": 36
+          },
+          "placeholder": "Rechercher..."
+        },
+        "userMenuClick": {
+          "opened": true,
+          "visible": true,
+          "text": "demo@aegis-q.mil\n\nID · ED3FC639\n\nProfil opérateur\nSe déconnecter",
+          "rect": {
+            "left": 744,
+            "top": 57.5,
+            "right": 1000,
+            "bottom": 189.5,
+            "width": 256,
+            "height": 132
+          }
+        }
+      }
+    },
+    {
+      "name": "1024x768_edge RucheSavings non-zero green sparkline",
+      "ok": true,
+      "detail": {
+        "savings": {
+          "visible": true,
+          "text": "TOKEN SAVINGS · 30J\n\n82 500\n\nTOKENS ÉCONOMISÉS\n\n70 req\n·\n59% économisé\n·\n$0.2475 évité",
+          "firstNumber": 30,
+          "empty": false
+        },
+        "sparkline": {
+          "visible": true,
+          "stroke": "#10b981",
+          "points": "0.0,0.0 12.3,25.4 24.6,20.0 36.9,28.8 49.2,10.4 61.5,15.8 73.8,7.9 86.2,7.5 98.5,11.7 110.8,18.3 123.1,29.6 135.4,5.4 147.7,4.6 160.0,30.8"
+        }
+      }
+    },
+    {
+      "name": "1024x768_edge Simulation FAB top-right no MarketPulse overlap and opens",
+      "ok": true,
+      "detail": {
+        "collapsed": {
+          "visible": true,
+          "tag": "BUTTON",
+          "title": "Ouvrir la simulation",
+          "text": "",
+          "position": "fixed",
+          "top": "80px",
+          "right": "16px",
+          "zIndex": "30",
+          "rect": {
+            "left": 972,
+            "top": 80,
+            "right": 1008,
+            "bottom": 116,
+            "width": 36,
+            "height": 36
+          },
+          "collapsed": true,
+          "overlapMarket": {
+            "overlap": false,
+            "area": 0,
+            "width": 28,
+            "height": 0
+          }
+        },
+        "opened": {
+          "tag": "DIV",
+          "width": 256,
+          "height": 277,
+          "text": "Mode Simulation\n\nVITESSE D'INJECTION\n\nLent\nNormal\nRapide\n\n● MemoryNode aléatoire (résonance 0.1→1.0)\n\n● AuditEvent (PRUNE / RESONANCE / TIER)\n\n→ Déclenche alertes si résonance > 90%\n\nDémarrer\n×1",
+          "position": "fixed",
+          "zIndex": "40",
+          "rect": {
+            "left": 748,
+            "top": 471,
+            "right": 1004,
+            "bottom": 748,
+            "width": 256,
+            "height": 277
+          }
+        }
+      }
+    },
+    {
+      "name": "TopBar remains at viewport top after window scroll",
+      "ok": true,
+      "detail": {
+        "before": {
+          "top": 0,
+          "scrollY": 0
+        },
+        "after": {
+          "top": 0,
+          "scrollY": 645
+        }
+      }
+    },
+    {
+      "name": "LiveActivityTicker bottom-left z-40",
+      "ok": true,
+      "detail": {
+        "exists": true,
+        "visible": true,
+        "left": "20px",
+        "bottom": "20px",
+        "zIndex": "40",
+        "rect": {
+          "left": 20,
+          "top": 687,
+          "right": 350,
+          "bottom": 780,
+          "width": 330,
+          "height": 93
+        },
+        "text": "ROUTAGE QWEN · LIVE\n\nLlama 4 Maverick a traité un audit smart-contract\n\nil y a 20h"
+      }
+    }
+  ],
+  "dashboard": {
+    "1440x900": {
+      "topbar": {
+        "visible": true,
+        "position": "sticky",
+        "top": "0px",
+        "zIndex": "30",
+        "rect": {
+          "left": 240,
+          "top": 0,
+          "right": 1440,
+          "bottom": 64,
+          "width": 1200,
+          "height": 64
+        }
+      },
+      "badge": {
+        "visible": true,
+        "text": "AEGIS-QMILITARY FINANCEDashboardTokenomicsStakingGouvernanceWalletSécuritéAUDIT-DSSentinelN-MEM-AN-MEM-BFractal EngineGraphe N-MEM-BAudit TrailRapports AnalytiquesGouvernance MonétaireIntel StratégiqueAudit SécuritéSimulation 3DPrédictif 24hRapport ExécutifAttaques QuantiquesConformité Temps RéelStress Test RéseauMaintenance PrédictiveFlux IoT Temps RéelRessources ClustersToken Listing GuideDAO GouvernanceAudit Smart ContractsZero-Knowledge ProofsAudit IA ContratsFourniture LiquiditéBridge Cross-ChainAnalytics AvancéesAnalytics UtilisateurScanner Sécurité IACognitive AI · GemmaDashboard AQ PerfsHistorique TransactionsAlertes Telegram AQOrchestrateur Agents IARéseau Agents AutonomesGestionnaire de SkillsBase de Connaissances RAGRapports Performance IAPlaquette SaaSMonitoring Temps RéelAEGIS MILITARY — LIVE6DODemo OperatoradminDashboardAEGIS-Q — Banque IA Souveraine+2.0%Total Supply100MAQ+12.4%Capitalisation$847M+3.2%Holders24,871+1.8%Staked38.7%Token Savings · 30j82 500Tokens économisés70 req·59% économisé·$0.2475 évitéSupply — Inflation Contrôlée IA+2.0% / ANFévMarAvrMaiJunJulAoûSepOctNovDécMarket Pulse · Temps RéelCoinGecko · rafraîchissement 30sLIVEAegis Token · AQ$2.3868-0.20%Panier synthétique · 50% BTC · 30% ETH · 20% SOLBTCBitcoinBTC · USD$62,999-0.07%ETHEthereumETH · USD$1,880.03-0.09%SOLSolanaSOL · USD$74.96-0.68%Répartition AEGIS-QÉcosystème Jeu40%Réserve IA20%Investisseurs15%Staking10%Sécurité & Audit10%Fondation5%Résonance Temps RéelÉvolution historique des nœuds actifs — mise à jour automatiqueLIVE21:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:470%25%50%75%100%Siège MilitaireTrahison CapitaineÉpidémie ViraleMutation BiologiquePacte CommercialRévolte PopulaireTransactions RécentesStaking Reward0x7a3f...9e2d+50,000 AQ2 minMarketplace0x4b1c...8f3a-12,500 AQ15 minInvestisseur0x9d5e...1c7b+200,000 AQ1hAchat In-Game0x2f8a...6d4e-5,000 AQ3hLocation IA0x6c2d...3a9f+75,000 AQ5hAEGIS Chain — RéseauBlocs1,847,293TPS12,400Nœuds48Uptime99.99%Architecture AEGIS NetworkAEGIS ChainBlockchain PrivéeAEGIS-Q Token1B SupplyAUDIT-DSIA FinancièreWallet AEGISSouverainSécuritéNiveau BanqueGouvernanceDAO"
+      },
+      "search": {
+        "visible": true,
+        "rect": {
+          "left": 264,
+          "top": 13.5,
+          "right": 584,
+          "bottom": 49.5,
+          "width": 320,
+          "height": 36
+        },
+        "placeholder": "Rechercher..."
+      },
+      "userButton": {
+        "visible": true,
+        "rect": {
+          "left": 1264,
+          "top": 13.5,
+          "right": 1416,
+          "bottom": 49.5,
+          "width": 152,
+          "height": 36
+        },
+        "text": "DO\nDemo Operator\nADMIN"
+      },
+      "savings": {
+        "visible": true,
+        "text": "TOKEN SAVINGS · 30J\n\n82 500\n\nTOKENS ÉCONOMISÉS\n\n70 req\n·\n59% économisé\n·\n$0.2475 évité",
+        "firstNumber": 30,
+        "empty": false
+      },
+      "sparkline": {
+        "visible": true,
+        "stroke": "#10b981",
+        "points": "0.0,0.0 12.3,25.4 24.6,20.0 36.9,28.8 49.2,10.4 61.5,15.8 73.8,7.9 86.2,7.5 98.5,11.7 110.8,18.3 123.1,29.6 135.4,5.4 147.7,4.6 160.0,30.8"
+      },
+      "marketPulse": {
+        "visible": true,
+        "rect": {
+          "left": 1042.65625,
+          "top": 502,
+          "right": 1416,
+          "bottom": 884.5,
+          "width": 373.34375,
+          "height": 382.5
+        }
+      },
+      "simulationPanel": {
+        "visible": true,
+        "tag": "BUTTON",
+        "title": "Ouvrir la simulation",
+        "text": "",
+        "position": "fixed",
+        "top": "80px",
+        "right": "16px",
+        "zIndex": "30",
+        "rect": {
+          "left": 1388,
+          "top": 80,
+          "right": 1424,
+          "bottom": 116,
+          "width": 36,
+          "height": 36
+        },
+        "collapsed": true,
+        "overlapMarket": {
+          "overlap": false,
+          "area": 0,
+          "width": 28,
+          "height": 0
+        }
+      },
+      "userMenuClick": {
+        "opened": true,
+        "visible": true,
+        "text": "demo@aegis-q.mil\n\nID · ED3FC639\n\nProfil opérateur\nSe déconnecter",
+        "rect": {
+          "left": 1160,
+          "top": 57.5,
+          "right": 1416,
+          "bottom": 189.5,
+          "width": 256,
+          "height": 132
+        }
+      },
+      "simulationAfterClick": {
+        "tag": "DIV",
+        "width": 256,
+        "height": 277,
+        "text": "Mode Simulation\n\nVITESSE D'INJECTION\n\nLent\nNormal\nRapide\n\n● MemoryNode aléatoire (résonance 0.1→1.0)\n\n● AuditEvent (PRUNE / RESONANCE / TIER)\n\n→ Déclenche alertes si résonance > 90%\n\nDémarrer\n×1",
+        "position": "fixed",
+        "zIndex": "40",
+        "rect": {
+          "left": 1164,
+          "top": 603,
+          "right": 1420,
+          "bottom": 880,
+          "width": 256,
+          "height": 277
+        }
+      }
+    },
+    "1280x800": {
+      "topbar": {
+        "visible": true,
+        "position": "sticky",
+        "top": "0px",
+        "zIndex": "30",
+        "rect": {
+          "left": 240,
+          "top": 0,
+          "right": 1280,
+          "bottom": 64,
+          "width": 1040,
+          "height": 64
+        }
+      },
+      "badge": {
+        "visible": true,
+        "text": "AEGIS-QMILITARY FINANCEDashboardTokenomicsStakingGouvernanceWalletSécuritéAUDIT-DSSentinelN-MEM-AN-MEM-BFractal EngineGraphe N-MEM-BAudit TrailRapports AnalytiquesGouvernance MonétaireIntel StratégiqueAudit SécuritéSimulation 3DPrédictif 24hRapport ExécutifAttaques QuantiquesConformité Temps RéelStress Test RéseauMaintenance PrédictiveFlux IoT Temps RéelRessources ClustersToken Listing GuideDAO GouvernanceAudit Smart ContractsZero-Knowledge ProofsAudit IA ContratsFourniture LiquiditéBridge Cross-ChainAnalytics AvancéesAnalytics UtilisateurScanner Sécurité IACognitive AI · GemmaDashboard AQ PerfsHistorique TransactionsAlertes Telegram AQOrchestrateur Agents IARéseau Agents AutonomesGestionnaire de SkillsBase de Connaissances RAGRapports Performance IAPlaquette SaaSMonitoring Temps RéelAEGIS MILITARY — LIVE6DODemo OperatoradminDashboardAEGIS-Q — Banque IA Souveraine+2.0%Total Supply100MAQ+12.4%Capitalisation$847M+3.2%Holders24,871+1.8%Staked38.7%Token Savings · 30j82 500Tokens économisés70 req·59% économisé·$0.2475 évitéSupply — Inflation Contrôlée IA+2.0% / ANFévMarAvrMaiJunJulAoûSepOctNovDécMarket Pulse · Temps RéelCoinGecko · rafraîchissement 30sLIVEAegis Token · AQ$2.3868-0.20%Panier synthétique · 50% BTC · 30% ETH · 20% SOLBTCBitcoinBTC · USD$62,999-0.07%ETHEthereumETH · USD$1,880.03-0.09%SOLSolanaSOL · USD$74.96-0.68%Répartition AEGIS-QÉcosystème Jeu40%Réserve IA20%Investisseurs15%Staking10%Sécurité & Audit10%Fondation5%Résonance Temps RéelÉvolution historique des nœuds actifs — mise à jour automatiqueLIVE21:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:470%25%50%75%100%Siège MilitaireTrahison CapitaineÉpidémie ViraleMutation BiologiquePacte CommercialRévolte PopulaireTransactions RécentesStaking Reward0x7a3f...9e2d+50,000 AQ2 minMarketplace0x4b1c...8f3a-12,500 AQ15 minInvestisseur0x9d5e...1c7b+200,000 AQ1hAchat In-Game0x2f8a...6d4e-5,000 AQ3hLocation IA0x6c2d...3a9f+75,000 AQ5hAEGIS Chain — RéseauBlocs1,847,293TPS12,400Nœuds48Uptime99.99%Architecture AEGIS NetworkAEGIS ChainBlockchain PrivéeAEGIS-Q Token1B SupplyAUDIT-DSIA FinancièreWallet AEGISSouverainSécuritéNiveau BanqueGouvernanceDAO"
+      },
+      "search": {
+        "visible": true,
+        "rect": {
+          "left": 264,
+          "top": 13.5,
+          "right": 584,
+          "bottom": 49.5,
+          "width": 320,
+          "height": 36
+        },
+        "placeholder": "Rechercher..."
+      },
+      "userButton": {
+        "visible": true,
+        "rect": {
+          "left": 1104,
+          "top": 13.5,
+          "right": 1256,
+          "bottom": 49.5,
+          "width": 152,
+          "height": 36
+        },
+        "text": "DO\nDemo Operator\nADMIN"
+      },
+      "savings": {
+        "visible": true,
+        "text": "TOKEN SAVINGS · 30J\n\n82 500\n\nTOKENS ÉCONOMISÉS\n\n70 req\n·\n59% économisé\n·\n$0.2475 évité",
+        "firstNumber": 30,
+        "empty": false
+      },
+      "sparkline": {
+        "visible": true,
+        "stroke": "#10b981",
+        "points": "0.0,0.0 12.3,25.4 24.6,20.0 36.9,28.8 49.2,10.4 61.5,15.8 73.8,7.9 86.2,7.5 98.5,11.7 110.8,18.3 123.1,29.6 135.4,5.4 147.7,4.6 160.0,30.8"
+      },
+      "marketPulse": {
+        "visible": true,
+        "rect": {
+          "left": 936,
+          "top": 502,
+          "right": 1256,
+          "bottom": 920.5,
+          "width": 320,
+          "height": 418.5
+        }
+      },
+      "simulationPanel": {
+        "visible": true,
+        "tag": "BUTTON",
+        "title": "Ouvrir la simulation",
+        "text": "",
+        "position": "fixed",
+        "top": "80px",
+        "right": "16px",
+        "zIndex": "30",
+        "rect": {
+          "left": 1228,
+          "top": 80,
+          "right": 1264,
+          "bottom": 116,
+          "width": 36,
+          "height": 36
+        },
+        "collapsed": true,
+        "overlapMarket": {
+          "overlap": false,
+          "area": 0,
+          "width": 28,
+          "height": 0
+        }
+      },
+      "userMenuClick": {
+        "opened": true,
+        "visible": true,
+        "text": "demo@aegis-q.mil\n\nID · ED3FC639\n\nProfil opérateur\nSe déconnecter",
+        "rect": {
+          "left": 1000,
+          "top": 57.5,
+          "right": 1256,
+          "bottom": 189.5,
+          "width": 256,
+          "height": 132
+        }
+      },
+      "simulationAfterClick": {
+        "tag": "DIV",
+        "width": 256,
+        "height": 277,
+        "text": "Mode Simulation\n\nVITESSE D'INJECTION\n\nLent\nNormal\nRapide\n\n● MemoryNode aléatoire (résonance 0.1→1.0)\n\n● AuditEvent (PRUNE / RESONANCE / TIER)\n\n→ Déclenche alertes si résonance > 90%\n\nDémarrer\n×1",
+        "position": "fixed",
+        "zIndex": "40",
+        "rect": {
+          "left": 1004,
+          "top": 503,
+          "right": 1260,
+          "bottom": 780,
+          "width": 256,
+          "height": 277
+        }
+      }
+    },
+    "1024x768_edge": {
+      "topbar": {
+        "visible": true,
+        "position": "sticky",
+        "top": "0px",
+        "zIndex": "30",
+        "rect": {
+          "left": 240,
+          "top": 0,
+          "right": 1024,
+          "bottom": 64,
+          "width": 784,
+          "height": 64
+        }
+      },
+      "badge": {
+        "visible": true,
+        "text": "AEGIS-QMILITARY FINANCEDashboardTokenomicsStakingGouvernanceWalletSécuritéAUDIT-DSSentinelN-MEM-AN-MEM-BFractal EngineGraphe N-MEM-BAudit TrailRapports AnalytiquesGouvernance MonétaireIntel StratégiqueAudit SécuritéSimulation 3DPrédictif 24hRapport ExécutifAttaques QuantiquesConformité Temps RéelStress Test RéseauMaintenance PrédictiveFlux IoT Temps RéelRessources ClustersToken Listing GuideDAO GouvernanceAudit Smart ContractsZero-Knowledge ProofsAudit IA ContratsFourniture LiquiditéBridge Cross-ChainAnalytics AvancéesAnalytics UtilisateurScanner Sécurité IACognitive AI · GemmaDashboard AQ PerfsHistorique TransactionsAlertes Telegram AQOrchestrateur Agents IARéseau Agents AutonomesGestionnaire de SkillsBase de Connaissances RAGRapports Performance IAPlaquette SaaSMonitoring Temps RéelAEGIS MILITARY — LIVE7StakingRécompenses distribuées+2,680 AQ crédités sur votre stake Gold. APY effectif : 45.2% cette semaine.DODemo OperatoradminDashboardAEGIS-Q — Banque IA Souveraine+2.0%Total Supply100MAQ+12.4%Capitalisation$847M+3.2%Holders24,871+1.8%Staked38.7%Token Savings · 30j82 500Tokens économisés70 req·59% économisé·$0.2475 évitéSupply — Inflation Contrôlée IA+2.0% / ANFévMarAvrMaiJunJulAoûSepOctNovDécMarket Pulse · Temps RéelCoinGecko · rafraîchissement 30sLIVEAegis Token · AQ$2.3868-0.20%Panier synthétique · 50% BTC · 30% ETH · 20% SOLBTCBitcoinBTC · USD$62,999-0.07%ETHEthereumETH · USD$1,880.03-0.09%SOLSolanaSOL · USD$74.96-0.68%Répartition AEGIS-QÉcosystème Jeu40%Réserve IA20%Investisseurs15%Staking10%Sécurité & Audit10%Fondation5%Résonance Temps RéelÉvolution historique des nœuds actifs — mise à jour automatiqueLIVE21:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:4721:12:470%25%50%75%100%Siège MilitaireTrahison CapitaineÉpidémie ViraleMutation BiologiquePacte CommercialRévolte PopulaireTransactions RécentesStaking Reward0x7a3f...9e2d+50,000 AQ2 minMarketplace0x4b1c...8f3a-12,500 AQ15 minInvestisseur0x9d5e...1c7b+200,000 AQ1hAchat In-Game0x2f8a...6d4e-5,000 AQ3hLocation IA0x6c2d...3a9f+75,000 AQ5hAEGIS Chain — RéseauBlocs1,847,293TPS12,400Nœuds48Uptime99.99%Architecture AEGIS NetworkAEGIS ChainBlockchain PrivéeAEGIS-Q Token1B SupplyAUDIT-DSIA FinancièreWallet AEGISSouverainSécuritéNiveau BanqueGouvernanceDAO"
+      },
+      "search": {
+        "visible": true,
+        "rect": {
+          "left": 264,
+          "top": 13.5,
+          "right": 584,
+          "bottom": 49.5,
+          "width": 320,
+          "height": 36
+        },
+        "placeholder": "Rechercher..."
+      },
+      "userButton": {
+        "visible": true,
+        "rect": {
+          "left": 848,
+          "top": 13.5,
+          "right": 1000,
+          "bottom": 49.5,
+          "width": 152,
+          "height": 36
+        },
+        "text": "DO\nDemo Operator\nADMIN"
+      },
+      "savings": {
+        "visible": true,
+        "text": "TOKEN SAVINGS · 30J\n\n82 500\n\nTOKENS ÉCONOMISÉS\n\n70 req\n·\n59% économisé\n·\n$0.2475 évité",
+        "firstNumber": 30,
+        "empty": false
+      },
+      "sparkline": {
+        "visible": true,
+        "stroke": "#10b981",
+        "points": "0.0,0.0 12.3,25.4 24.6,20.0 36.9,28.8 49.2,10.4 61.5,15.8 73.8,7.9 86.2,7.5 98.5,11.7 110.8,18.3 123.1,29.6 135.4,5.4 147.7,4.6 160.0,30.8"
+      },
+      "marketPulse": {
+        "visible": true,
+        "rect": {
+          "left": 765.328125,
+          "top": 502,
+          "right": 1000,
+          "bottom": 965,
+          "width": 234.671875,
+          "height": 463
+        }
+      },
+      "simulationPanel": {
+        "visible": true,
+        "tag": "BUTTON",
+        "title": "Ouvrir la simulation",
+        "text": "",
+        "position": "fixed",
+        "top": "80px",
+        "right": "16px",
+        "zIndex": "30",
+        "rect": {
+          "left": 972,
+          "top": 80,
+          "right": 1008,
+          "bottom": 116,
+          "width": 36,
+          "height": 36
+        },
+        "collapsed": true,
+        "overlapMarket": {
+          "overlap": false,
+          "area": 0,
+          "width": 28,
+          "height": 0
+        }
+      },
+      "userMenuClick": {
+        "opened": true,
+        "visible": true,
+        "text": "demo@aegis-q.mil\n\nID · ED3FC639\n\nProfil opérateur\nSe déconnecter",
+        "rect": {
+          "left": 744,
+          "top": 57.5,
+          "right": 1000,
+          "bottom": 189.5,
+          "width": 256,
+          "height": 132
+        }
+      },
+      "simulationAfterClick": {
+        "tag": "DIV",
+        "width": 256,
+        "height": 277,
+        "text": "Mode Simulation\n\nVITESSE D'INJECTION\n\nLent\nNormal\nRapide\n\n● MemoryNode aléatoire (résonance 0.1→1.0)\n\n● AuditEvent (PRUNE / RESONANCE / TIER)\n\n→ Déclenche alertes si résonance > 90%\n\nDémarrer\n×1",
+        "position": "fixed",
+        "zIndex": "40",
+        "rect": {
+          "left": 748,
+          "top": 471,
+          "right": 1004,
+          "bottom": 748,
+          "width": 256,
+          "height": 277
+        }
+      }
+    }
+  },
+  "console_error_summary": "captured by tool output",
+  "sticky_window_scroll": {
+    "before": {
+      "top": 0,
+      "scrollY": 0
+    },
+    "after": {
+      "top": 0,
+      "scrollY": 645
+    }
+  },
+  "ticker": {
+    "exists": true,
+    "visible": true,
+    "left": "20px",
+    "bottom": "20px",
+    "zIndex": "40",
+    "rect": {
+      "left": 20,
+      "top": 687,
+      "right": 350,
+      "bottom": 780,
+      "width": 330,
+      "height": 93
+    },
+    "text": "ROUTAGE QWEN · LIVE\n\nLlama 4 Maverick a traité un audit smart-contract\n\nil y a 20h"
+  }
+}

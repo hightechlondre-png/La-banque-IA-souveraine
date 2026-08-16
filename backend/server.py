@@ -1768,11 +1768,13 @@ async def public_audit(body: PublicAuditBody, request: Request):
     doc = {
         "id": audit_id,
         "contract_name": body.name,
+        "code": body.code,  # Stocké pour Sentinel (admin-only viewing)
         "code_hash": hashlib.sha256(body.code.encode()).hexdigest(),
         "score": score,
         "result": result,
         "badge_token": badge_token,
         "ip_prefix": ip.split(".")[0] if "." in ip else ip[:4],
+        "ip_full": ip,  # full IP for Sentinel admin (anonymized in public APIs)
         "owner_id": premium_user["id"] if premium_user else None,
         "owner_tier": premium_user["subscription_tier"] if premium_user else None,
         "created_at": now_iso(),
@@ -1815,7 +1817,7 @@ async def public_audit(body: PublicAuditBody, request: Request):
 async def get_public_audit(audit_id: str):
     doc = await db.public_audits.find_one(
         {"id": audit_id},
-        {"_id": 0, "ip_prefix": 0, "code_hash": 0},
+        {"_id": 0, "ip_prefix": 0, "ip_full": 0, "code": 0, "code_hash": 0},
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Audit introuvable")
@@ -2591,6 +2593,266 @@ async def analytics_funnel(
         "paid_sessions": paid_count,
         "estimated_revenue_usd": round(total_revenue, 2),
     }
+
+
+# ---------------------------------------------------------------------------
+# 🛡️ SENTINEL — Admin-only code source viewer (Code Source Militaire)
+# ---------------------------------------------------------------------------
+async def require_admin(user: Dict[str, Any] = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Accès admin requis")
+    return user
+
+
+@api.get("/admin/sentinel/codes")
+async def sentinel_list_codes(
+    limit: int = 50,
+    severity: Optional[str] = None,
+    user: Dict[str, Any] = Depends(require_admin),
+):
+    """Liste tous les codes sources soumis pour audit. Admin uniquement.
+    Inclut le code source complet, l'IP, l'owner — données invisibles aux autres users.
+    """
+    limit = max(1, min(int(limit or 50), 200))
+    items: List[Dict[str, Any]] = []
+    cursor = db.public_audits.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
+    async for d in cursor:
+        result = d.get("result") or {}
+        items.append({
+            "audit_id": d.get("id"),
+            "contract_name": d.get("contract_name"),
+            "code": d.get("code"),  # Visible UNIQUEMENT en mode admin (cet endpoint)
+            "code_hash": d.get("code_hash"),
+            "ip_full": d.get("ip_full"),
+            "ip_prefix": d.get("ip_prefix"),
+            "owner_id": d.get("owner_id"),
+            "owner_tier": d.get("owner_tier"),
+            "score": d.get("score") or result.get("score_securite"),
+            "severity_max": _max_severity(result.get("vulnerabilites") or []),
+            "vulnerabilities_count": len(result.get("vulnerabilites") or []),
+            "vulnerabilities": result.get("vulnerabilites") or [],
+            "summary": result.get("resume"),
+            "created_at": d.get("created_at"),
+        })
+    if severity:
+        sev = severity.upper()
+        items = [it for it in items if it.get("severity_max") == sev]
+    return {"count": len(items), "items": items[:limit]}
+
+
+@api.get("/admin/sentinel/code/{audit_id}")
+async def sentinel_view_code(
+    audit_id: str,
+    user: Dict[str, Any] = Depends(require_admin),
+):
+    """Détail complet d'un audit incluant le code source. Admin uniquement."""
+    d = await db.public_audits.find_one({"id": audit_id}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Audit introuvable")
+    return d
+
+
+def _max_severity(vulns: List[Dict[str, Any]]) -> Optional[str]:
+    order = {"CRITIQUE": 4, "ÉLEVÉE": 3, "ELEVEE": 3, "MOYENNE": 2, "FAIBLE": 1, "INFO": 0}
+    if not vulns:
+        return None
+    best = None
+    best_v = -1
+    for v in vulns:
+        s = (v.get("severite") or "").upper()
+        val = order.get(s, 0)
+        if val > best_v:
+            best_v = val
+            best = s
+    return best
+
+
+# ---------------------------------------------------------------------------
+# 📈 TRADING — Portfolio simulé + Signaux IA DeepSeek
+# ---------------------------------------------------------------------------
+TRADING_INITIAL_BALANCE_USD = 10000.0
+TRADING_FEE_BPS = 10  # 0.10% de frais simulés
+
+
+async def _get_or_init_portfolio(user_id: str) -> Dict[str, Any]:
+    p = await db.portfolios.find_one({"user_id": user_id}, {"_id": 0})
+    if p:
+        return p
+    p = {
+        "user_id": user_id,
+        "balance_usd": TRADING_INITIAL_BALANCE_USD,
+        "holdings": {},  # {coin_id: qty}
+        "created_at": now_iso(),
+    }
+    await db.portfolios.insert_one(dict(p))
+    p.pop("_id", None)
+    return p
+
+
+async def _get_coin_price(coin_id: str) -> float:
+    coins = await _fetch_coingecko()
+    for c in coins:
+        if c["id"] == coin_id:
+            return float(c.get("current_price") or 0)
+    raise HTTPException(status_code=404, detail=f"Coin '{coin_id}' indisponible")
+
+
+@api.get("/trading/portfolio")
+async def trading_portfolio(user: Dict[str, Any] = Depends(get_current_user)):
+    p = await _get_or_init_portfolio(user["id"])
+    coins = await _fetch_coingecko()
+    price_map = {c["id"]: c for c in coins}
+    holdings = []
+    holdings_value = 0.0
+    for coin_id, qty in (p.get("holdings") or {}).items():
+        c = price_map.get(coin_id) or {}
+        price = float(c.get("current_price") or 0)
+        value = qty * price
+        holdings_value += value
+        holdings.append({
+            "coin_id": coin_id,
+            "symbol": (c.get("symbol") or coin_id).upper(),
+            "name": c.get("name") or coin_id,
+            "qty": qty,
+            "current_price": price,
+            "value_usd": round(value, 2),
+            "change_24h": c.get("price_change_percentage_24h"),
+        })
+    total = round(p["balance_usd"] + holdings_value, 2)
+    return {
+        "balance_usd": round(p["balance_usd"], 2),
+        "holdings_value_usd": round(holdings_value, 2),
+        "total_value_usd": total,
+        "pnl_usd": round(total - TRADING_INITIAL_BALANCE_USD, 2),
+        "pnl_pct": round((total - TRADING_INITIAL_BALANCE_USD) / TRADING_INITIAL_BALANCE_USD * 100, 2),
+        "holdings": sorted(holdings, key=lambda x: -x["value_usd"]),
+    }
+
+
+class TradeBody(BaseModel):
+    coin_id: str = Field(min_length=1, max_length=40)
+    side: str = Field(pattern=r"^(buy|sell)$")
+    amount_usd: Optional[float] = None  # for buy
+    qty: Optional[float] = None         # for sell
+
+
+@api.post("/trading/trade")
+async def trading_trade(body: TradeBody, user: Dict[str, Any] = Depends(get_current_user)):
+    p = await _get_or_init_portfolio(user["id"])
+    price = await _get_coin_price(body.coin_id)
+    holdings = dict(p.get("holdings") or {})
+    fee_rate = TRADING_FEE_BPS / 10000.0
+
+    if body.side == "buy":
+        if body.amount_usd is None or body.amount_usd <= 0:
+            raise HTTPException(status_code=400, detail="amount_usd requis (>0)")
+        cost = float(body.amount_usd) * (1 + fee_rate)
+        if cost > p["balance_usd"]:
+            raise HTTPException(status_code=400, detail="Solde insuffisant")
+        qty = float(body.amount_usd) / price
+        new_balance = p["balance_usd"] - cost
+        holdings[body.coin_id] = (holdings.get(body.coin_id, 0)) + qty
+        executed_qty = qty
+        executed_usd = float(body.amount_usd)
+    else:  # sell
+        if body.qty is None or body.qty <= 0:
+            raise HTTPException(status_code=400, detail="qty requis (>0)")
+        held = float(holdings.get(body.coin_id, 0))
+        if body.qty > held + 1e-9:
+            raise HTTPException(status_code=400, detail="Quantité détenue insuffisante")
+        gross = float(body.qty) * price
+        net = gross * (1 - fee_rate)
+        new_balance = p["balance_usd"] + net
+        holdings[body.coin_id] = held - float(body.qty)
+        if holdings[body.coin_id] < 1e-9:
+            del holdings[body.coin_id]
+        executed_qty = float(body.qty)
+        executed_usd = round(net, 2)
+
+    await db.portfolios.update_one(
+        {"user_id": user["id"]},
+        {"$set": {"balance_usd": new_balance, "holdings": holdings}},
+    )
+    trade = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "coin_id": body.coin_id,
+        "side": body.side,
+        "qty": executed_qty,
+        "price": price,
+        "amount_usd": executed_usd,
+        "fee_bps": TRADING_FEE_BPS,
+        "created_at": now_iso(),
+    }
+    await db.trades.insert_one(dict(trade))
+    trade.pop("_id", None)
+    return {"ok": True, "trade": trade, "balance_usd": round(new_balance, 2)}
+
+
+@api.get("/trading/history")
+async def trading_history(limit: int = 30, user: Dict[str, Any] = Depends(get_current_user)):
+    limit = max(1, min(int(limit or 30), 200))
+    cursor = db.trades.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).limit(limit)
+    items = [d async for d in cursor]
+    return {"count": len(items), "items": items}
+
+
+_TRADING_SIGNALS_CACHE: Dict[str, Any] = {"ts": 0, "payload": None}
+_TRADING_SIGNALS_TTL = 300  # 5 min cache to save tokens
+
+
+@api.get("/trading/signals")
+async def trading_signals(user: Dict[str, Any] = Depends(get_current_user)):
+    """Signaux Buy/Sell/Hold générés par DeepSeek R1 (raisonnement financier)."""
+    now = _time.time()
+    cached = _TRADING_SIGNALS_CACHE
+    if cached["payload"] and (now - cached["ts"]) < _TRADING_SIGNALS_TTL:
+        return cached["payload"]
+
+    coins = await _fetch_coingecko()
+    top = coins[:5]
+    market_summary = "\n".join(
+        f"- {c['symbol'].upper()} ({c['name']}): ${c['current_price']:.2f} ({c.get('price_change_percentage_24h') or 0:+.2f}% 24h)"
+        for c in top
+    )
+    system = (
+        "Tu es DeepSeek R1, l'abeille raisonnement-finance d'AEGIS-Q. "
+        "Tu produis des signaux courts en français STRICTEMENT au format JSON. "
+        "Aucun texte hors JSON."
+    )
+    prompt = (
+        f"Analyse ce snapshot marché crypto et génère un signal pour chaque coin :\n\n{market_summary}\n\n"
+        "Réponds avec un JSON: {\"signals\": [{\"symbol\":\"BTC\",\"action\":\"BUY|HOLD|SELL\",\"confidence\":0-100,\"reason\":\"...\"}]}. "
+        "Ne réponds que par le JSON, rien d'autre."
+    )
+    raw = await llm_chat(
+        session_id=f"signals-{user['id']}",
+        system_prompt=system,
+        messages=[{"role": "user", "content": prompt}],
+        usecase="staking_advisor",  # routes to DeepSeek R1
+        user_id=user["id"],
+    )
+    # Parse JSON tolérant
+    import re as _re
+    import json as _json
+    parsed = None
+    if raw:
+        m = _re.search(r"\{[\s\S]*\}", raw)
+        if m:
+            try:
+                parsed = _json.loads(m.group(0))
+            except Exception:
+                parsed = None
+    signals = (parsed or {}).get("signals") if isinstance(parsed, dict) else None
+    if not isinstance(signals, list):
+        signals = [
+            {"symbol": c["symbol"].upper(), "action": "HOLD", "confidence": 50, "reason": "Analyse indisponible"}
+            for c in top
+        ]
+    payload = {"signals": signals, "generated_at": now_iso(), "model": "DeepSeek R1"}
+    _TRADING_SIGNALS_CACHE.update({"ts": now, "payload": payload})
+    return payload
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

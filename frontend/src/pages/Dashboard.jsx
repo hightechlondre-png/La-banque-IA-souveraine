@@ -11,7 +11,7 @@ import RucheSavingsCompact from "../components/dashboard/RucheSavingsCompact";
 
 export default function Dashboard() {
   return (
-    <div className="space-y-6 max-w-7xl">
+    <div className="space-y-6 max-w-7xl mx-auto pb-24">
       {/* Header */}
       <div>
         <h2 className="text-2xl font-bold text-foreground tracking-tight">Dashboard</h2>

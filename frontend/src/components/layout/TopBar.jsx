@@ -27,22 +27,25 @@ export default function TopBar() {
     .toUpperCase();
 
   return (
-    <header className="h-16 border-b border-border flex items-center justify-between px-6 bg-card/50 backdrop-blur-sm">
-      <div className="flex items-center gap-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+    <header
+      data-testid="topbar"
+      className="h-16 border-b border-border flex items-center justify-between px-4 sm:px-6 gap-3 bg-card/50 backdrop-blur-sm sticky top-0 z-30"
+    >
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <input
             data-testid="topbar-search-input"
             type="text"
             placeholder="Rechercher..."
-            className="h-9 w-64 pl-9 pr-4 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="h-9 w-full pl-9 pr-4 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </div>
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <Badge
           variant="outline"
-          className="bg-primary/5 text-primary border-primary/20 font-mono text-xs"
+          className="hidden md:inline-flex bg-primary/5 text-primary border-primary/20 font-mono text-xs"
         >
           <span className="h-1.5 w-1.5 rounded-full bg-green-500 mr-2 animate-pulse" />
           AEGIS MILITARY — LIVE
