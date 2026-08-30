@@ -7,7 +7,8 @@ Replicates base44 SDK surface:
   - Claude Opus 4.5 cognitive chat via emergentintegrations
 """
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, UploadFile, File, Query, Header
+from fastapi.responses import Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -17,6 +18,7 @@ import logging
 import uuid
 import math
 import asyncio
+import requests
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
@@ -2125,6 +2127,17 @@ async def on_startup():
         await db.public_audits.create_index("created_at")
     except Exception as e:
         logger.warning("public_audits index: %s", e)
+    # Files index
+    try:
+        await db.files.create_index([("user_id", 1), ("is_deleted", 1), ("created_at", -1)])
+    except Exception as e:
+        logger.warning("files index: %s", e)
+    # Init Emergent Object Storage (async, non-blocking)
+    try:
+        await ensure_storage_key()
+        logger.info("Emergent Object Storage initialized")
+    except Exception as e:
+        logger.warning("Object Storage init deferred: %s", e)
     logger.info("AEGIS-Q backend ready (indexes ensured)")
 
 
@@ -2852,6 +2865,197 @@ async def trading_signals(user: Dict[str, Any] = Depends(get_current_user)):
     payload = {"signals": signals, "generated_at": now_iso(), "model": "DeepSeek R1"}
     _TRADING_SIGNALS_CACHE.update({"ts": now, "payload": payload})
     return payload
+
+
+# ---------------------------------------------------------------------------
+# 📁 EMERGENT OBJECT STORAGE — File & Media uploads
+# ---------------------------------------------------------------------------
+STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
+STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+STORAGE_APP_NAME = "aegis-q"
+_storage_key: Optional[str] = None
+_storage_lock = asyncio.Lock()
+
+MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25 MB
+ALLOWED_MIME_PREFIXES = ("image/", "video/", "audio/", "application/pdf", "text/", "application/json", "application/octet-stream")
+
+
+def _init_storage_sync() -> str:
+    """Blocking init — appelé une seule fois via lock async wrapper."""
+    global _storage_key
+    if _storage_key:
+        return _storage_key
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise RuntimeError("EMERGENT_LLM_KEY manquant pour Object Storage")
+    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": key}, timeout=30)
+    resp.raise_for_status()
+    _storage_key = resp.json()["storage_key"]
+    return _storage_key
+
+
+async def ensure_storage_key() -> str:
+    global _storage_key
+    if _storage_key:
+        return _storage_key
+    async with _storage_lock:
+        if _storage_key:
+            return _storage_key
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _init_storage_sync)
+
+
+async def storage_put(path: str, data: bytes, content_type: str) -> Dict[str, Any]:
+    key = await ensure_storage_key()
+    def _do():
+        r = requests.put(
+            f"{STORAGE_URL}/objects/{path}",
+            headers={"X-Storage-Key": key, "Content-Type": content_type},
+            data=data,
+            timeout=120,
+        )
+        r.raise_for_status()
+        return r.json()
+    return await asyncio.get_event_loop().run_in_executor(None, _do)
+
+
+async def storage_get(path: str) -> tuple[bytes, str]:
+    key = await ensure_storage_key()
+    def _do():
+        r = requests.get(
+            f"{STORAGE_URL}/objects/{path}",
+            headers={"X-Storage-Key": key},
+            timeout=60,
+        )
+        r.raise_for_status()
+        return r.content, r.headers.get("Content-Type", "application/octet-stream")
+    return await asyncio.get_event_loop().run_in_executor(None, _do)
+
+
+def _is_mime_allowed(mime: Optional[str]) -> bool:
+    if not mime:
+        return False
+    return any(mime.startswith(p) for p in ALLOWED_MIME_PREFIXES)
+
+
+@api.post("/files/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    purpose: Optional[str] = Query(default="generic", max_length=40),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Upload un fichier vers Emergent Object Storage. Retourne le doc DB (avec id)."""
+    if not _is_mime_allowed(file.content_type):
+        raise HTTPException(status_code=415, detail=f"Type MIME non autorisé: {file.content_type}")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail=f"Fichier trop volumineux (max {MAX_UPLOAD_SIZE // (1024*1024)} MB)")
+    if len(data) == 0:
+        raise HTTPException(status_code=400, detail="Fichier vide")
+
+    filename = file.filename or "unnamed"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    file_id = str(uuid.uuid4())
+    path = f"{STORAGE_APP_NAME}/uploads/{user['id']}/{file_id}.{ext}"
+
+    try:
+        result = await storage_put(path, data, file.content_type or "application/octet-stream")
+    except Exception as e:
+        logger.exception("Storage upload failed")
+        raise HTTPException(status_code=502, detail=f"Storage indisponible: {str(e)[:200]}")
+
+    doc = {
+        "id": file_id,
+        "storage_path": result.get("path", path),
+        "original_filename": filename,
+        "content_type": file.content_type or "application/octet-stream",
+        "size": result.get("size", len(data)),
+        "purpose": purpose or "generic",
+        "user_id": user["id"],
+        "is_deleted": False,
+        "created_at": now_iso(),
+    }
+    await db.files.insert_one(dict(doc))
+    doc.pop("_id", None)
+    return doc
+
+
+@api.get("/files")
+async def list_files(
+    purpose: Optional[str] = None,
+    limit: int = 50,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Liste les fichiers du user (non-supprimés)."""
+    limit = max(1, min(int(limit or 50), 200))
+    q: Dict[str, Any] = {"user_id": user["id"], "is_deleted": False}
+    if purpose:
+        q["purpose"] = purpose
+    cursor = db.files.find(q, {"_id": 0}).sort("created_at", -1).limit(limit)
+    items = [d async for d in cursor]
+    return {"count": len(items), "items": items}
+
+
+@api.get("/files/{file_id}/download")
+async def download_file(
+    file_id: str,
+    auth: Optional[str] = Query(default=None),
+    authorization: Optional[str] = Header(default=None),
+):
+    """Télécharge un fichier. Support auth via header ou query param (pour <img src>)."""
+    # Auth: header OR query param (img tags ne peuvent pas envoyer de headers)
+    token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1]
+    elif auth:
+        token = auth
+    if not token:
+        raise HTTPException(status_code=401, detail="Auth requis")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+        user_id = payload.get("sub")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token invalide")
+
+    record = await db.files.find_one({"id": file_id, "is_deleted": False}, {"_id": 0})
+    if not record:
+        raise HTTPException(status_code=404, detail="Fichier introuvable")
+    # Ownership check (owner OR admin)
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user or (record["user_id"] != user_id and user.get("role") != "admin"):
+        raise HTTPException(status_code=403, detail="Accès refusé")
+
+    try:
+        data, ct = await storage_get(record["storage_path"])
+    except Exception as e:
+        logger.exception("Storage download failed")
+        raise HTTPException(status_code=502, detail=f"Storage error: {str(e)[:200]}")
+    return Response(
+        content=data,
+        media_type=record.get("content_type") or ct,
+        headers={
+            "Content-Disposition": f'inline; filename="{record.get("original_filename","file")}"',
+            "Cache-Control": "private, max-age=300",
+        },
+    )
+
+
+@api.delete("/files/{file_id}")
+async def delete_file(
+    file_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Soft-delete d'un fichier (no delete API côté storage)."""
+    record = await db.files.find_one({"id": file_id, "is_deleted": False}, {"_id": 0})
+    if not record:
+        raise HTTPException(status_code=404, detail="Fichier introuvable")
+    if record["user_id"] != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Accès refusé")
+    await db.files.update_one(
+        {"id": file_id},
+        {"$set": {"is_deleted": True, "deleted_at": now_iso()}},
+    )
+    return {"ok": True, "id": file_id}
 
 
 @app.on_event("shutdown")
